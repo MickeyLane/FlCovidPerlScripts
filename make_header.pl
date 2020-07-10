@@ -47,6 +47,18 @@ $cwd = Cwd::cwd();
 print ("Current working directory is $cwd\n");
 
 #
+# Read the old unified header file if it exists
+# This is for reporting purposes only
+#
+my $old_unified_name_string;
+my $f = "$dir/$global_definitions::column_name_output_file";
+if (-e $f) {
+    open (FILE, "<", $f) or die "Can not open $f: $!";
+    $old_unified_name_string = <FILE>;
+    close (FILE);
+}
+
+#
 # Part 1
 # ------
 #
@@ -159,16 +171,6 @@ if ($unified_column_name_count == 0) {
 }
 
 #
-# Report to the user
-#
-print ("Unified column names:\n");
-my $count = 0;
-while (my ($key, $val) = each %master_column_name_hash) {
-    my $string = sprintf ("%02d %s", $count++, $key);
-    print ("  $string\n");
-}
-
-#
 # Make a list of the keys in the master column hash
 #
 my @mc_list_1 = keys %master_column_name_hash;
@@ -176,16 +178,37 @@ my @mc_list_1 = keys %master_column_name_hash;
 # Optional: Sort the list
 #
 my $mc_string;
-if (0) {
+my @mc_list;
+if (1) {
     my @mc_list_2;
     foreach my $mc_1 (@mc_list_1) {
         push (@mc_list_2, $mc_1);
     }
-    my @mc_list_3 = sort (@mc_list_2);
-    $mc_string = join (',', @mc_list_3);
+    @mc_list = sort (@mc_list_2);
+    $mc_string = join (',', @mc_list);
 }
 else {
-    $mc_string = join (',', @mc_list_1);
+    @mc_list = @mc_list_1;
+    $mc_string = join (',', @mc_list);
+}
+
+#
+# Report to the user
+#
+print ("\nUnified column names:\n");
+my $count = 0;
+foreach my $key (@mc_list) {
+    my $string = sprintf ("%02d %s", $count++, $key);
+    print ("  $string\n");
+}
+
+#
+# See if the new one matches the old one. If so, report
+#
+if (defined ($old_unified_name_string)) {
+    if ($mc_string eq $old_unified_name_string) {
+        print ("The new string is the same as the old one\n");
+    }
 }
 
 my $output_file_name = "$cwd/$global_definitions::column_name_output_file";

@@ -89,6 +89,7 @@ foreach my $in_fn (@new_files) {
 
     my $input_file_handle;
     my $output_file_handle;
+    my %change_log_for_this_file;
 
     open ($input_file_handle, "<", $in_fn) or die "Can not open $in_fn: $!";
 
@@ -104,8 +105,8 @@ foreach my $in_fn (@new_files) {
         #
         $record =~ s/[\r\n]+//;  # remove <cr><lf>
 
-        $record_number++;
 
+        $record_number++;
         if ($record_number == 1) {
             #
             # 1st record has column heading names
@@ -133,28 +134,6 @@ foreach my $in_fn (@new_files) {
             #
             my @FBT_column_values = split (',', $record);
             my $len = @FBT_column_values;
-            # if ($len != $nf_column_list_len) {
-            #     print ("Record from $in_fn contains $len values\n");
-            #     print ("Expected $nf_column_list_len\n");
-
-            #     my $n = 0;
-            #     print ("FBT...\n");
-            #     foreach my $r (@FBT_column_values) {
-            #         my $s = sprintf ("%02d  %s", $n, $r);
-            #         print ("  $s\n");
-            #         $n++;
-            #     }
-
-            #     $n = 0;
-            #     print ("NF...\n");
-            #     foreach my $r (@nf_column_list) {
-            #         my $s = sprintf ("%02d  %s", $n, $r);
-            #         print ("  $s\n");
-            #         $n++;
-            #     }
-
-            #     die;
-            # }
 
             #
             # Go through all the columns. If a column has a value, see if it
@@ -171,7 +150,7 @@ foreach my $in_fn (@new_files) {
                     my $col_name = $nf_column_list[$column];
 
                     if (exists ($dictionary_ptr->{$col_name})) {
-                        $new_val = $dictionary_ptr->{$col_name}->($old_val);
+                        $new_val = $dictionary_ptr->{$col_name}->($old_val, \%change_log_for_this_file);
                     }
                     else {
                         $new_val = $old_val;
@@ -188,13 +167,20 @@ foreach my $in_fn (@new_files) {
 
             print ($output_file_handle "$new_csv_record\n");
         }
-
     }
 
     close ($input_file_handle);
     close ($output_file_handle);
-}
 
+    my $change_count = %change_log_for_this_file;
+    if ($change_count) {
+        while (my ($key, $val) = each %change_log_for_this_file) {
+            # my $string = sprintf ("%02d %s", $count++, $key);
+            print ("  $key\n");
+        }
+    }
+
+}
 
 #
 #
@@ -273,10 +259,13 @@ sub set_up_normalize_dictionary {
 
     $dictionary{'EventDate'} = sub {
         my $old_val = shift;
+        my $change_log_for_this_file_ptr = shift;
 
         my $new_val;
         if ($old_val =~ /^\d{13}/) {
             $new_val = convert_epoch ($old_val);
+
+            $change_log_for_this_file_ptr->{'EventDate'} = 1;
         }
         else {
             $new_val = $old_val;
@@ -289,10 +278,14 @@ sub set_up_normalize_dictionary {
 
     $dictionary{'Gender'} = sub {
         my $old_val = shift;
+        my $change_log_for_this_file_ptr = shift;
+
         if ($old_val eq 'Male') {
+            $change_log_for_this_file_ptr->{'Male'} = 1;
             return ('M');
         }
         elsif ($old_val eq 'Female') {
+            $change_log_for_this_file_ptr->{'Female'} = 1;
             return ('F');
         }
         else {
@@ -302,6 +295,7 @@ sub set_up_normalize_dictionary {
 
     $dictionary{'Case_'} = sub {
         my $old_val = shift;
+        my $change_log_for_this_file_ptr = shift;
 
         my $new_val;
         if ($old_val =~ /^(\d{2})\/(\d{2})\/(\d{2})/) {
@@ -310,7 +304,8 @@ sub set_up_normalize_dictionary {
             my $day = "$1";
             my $hour = 0;
             my $minute = 0;
-            $new_val = sprintf ("%04d %02d %02d %02d:%02d", $year, $month, $day, $hour, $minute);
+            $new_val = sprintf ("%04d-%02d-%02d %02d:%02d", $year, $month, $day, $hour, $minute);
+            $change_log_for_this_file_ptr->{'Case_'} = 1;
         }
         elsif ($old_val =~ /^(\d+)\/(\d{2})\/(\d{4})/) {
             my $year = "$3";
@@ -318,10 +313,12 @@ sub set_up_normalize_dictionary {
             my $day = int ($1);
             my $hour = 0;
             my $minute = 0;
-            $new_val = sprintf ("%04d %02d %02d %02d:%02d", $year, $month, $day, $hour, $minute);
+            $new_val = sprintf ("%04d-%02d-%02d %02d:%02d", $year, $month, $day, $hour, $minute);
+            $change_log_for_this_file_ptr->{'Case_'} = 1;
         }
         elsif ($old_val =~ /^\d{13}/) {
             $new_val = convert_epoch ($old_val);
+            $change_log_for_this_file_ptr->{'Case_'} = 1;
         }
         else {
             $new_val = $old_val;
@@ -349,7 +346,7 @@ sub convert_epoch {
     my $year = $dt->year;
     my $hour = $dt->hour;
     my $minute = $dt->minute;
-    my $string = sprintf ("%04d %02d %02d %02d:%02d", $year, $month, $day, $hour, $minute);
+    my $string = sprintf ("%04d-%02d-%02d %02d:%02d", $year, $month, $day, $hour, $minute);
 
     return ($string);
 }
