@@ -150,7 +150,7 @@ foreach my $in_fn (@new_files) {
                     my $col_name = $nf_column_list[$column];
 
                     if (exists ($dictionary_ptr->{$col_name})) {
-                        $new_val = $dictionary_ptr->{$col_name}->($old_val, \%change_log_for_this_file);
+                        $new_val = $dictionary_ptr->{$col_name}->($old_val, $col_name, \%change_log_for_this_file);
                     }
                     else {
                         $new_val = $old_val;
@@ -175,8 +175,34 @@ foreach my $in_fn (@new_files) {
     my $change_count = %change_log_for_this_file;
     if ($change_count) {
         while (my ($key, $val) = each %change_log_for_this_file) {
-            # my $string = sprintf ("%02d %s", $count++, $key);
-            print ("  $key\n");
+            my $type = ref ($val);
+            if ($type eq 'ARRAY') {
+                # print ("Input type is array\n");
+                my @array = @$val;
+                my $line_count = 1;
+                my $title_len;
+                my $title;
+                foreach my $s (@array) {
+                    if ($line_count == 1) {
+                        $title_len = length ($key);
+                        $title = $key;
+                    }
+                    else {
+                        $title = substr ("                             ", 0, $title_len);
+                    }
+                    
+                    my $string = sprintf ("%s - %s", $title, $s);
+                    print ("  $string\n");
+
+                    $line_count++;
+                }
+            }
+            else {
+                #
+                # Input is scalar
+                #
+                print ("  $key\n");
+            }
         }
     }
 
@@ -186,10 +212,6 @@ foreach my $in_fn (@new_files) {
 #
 #
 exit (1);
-
-###################################################################################
-#
-#
 
 ###################################################################################
 #
@@ -257,35 +279,25 @@ sub set_up_normalize_dictionary {
         return ($old_val);
     };
 
-    $dictionary{'EventDate'} = sub {
-        my $old_val = shift;
-        my $change_log_for_this_file_ptr = shift;
-
-        my $new_val;
-        if ($old_val =~ /^\d{13}/) {
-            $new_val = convert_epoch ($old_val);
-
-            $change_log_for_this_file_ptr->{'EventDate'} = 1;
-        }
-        else {
-            $new_val = $old_val;
-        }
-
-        return ($new_val);
-    };
-
-    $dictionary{'CaseDate'} = $dictionary{'EventDate'};
-
     $dictionary{'Gender'} = sub {
         my $old_val = shift;
+        my $col_name = shift;
         my $change_log_for_this_file_ptr = shift;
 
         if ($old_val eq 'Male') {
-            $change_log_for_this_file_ptr->{'Male'} = 1;
+            add_to_change_log ($change_log_for_this_file_ptr, $col_name, 'Male => M');
+            return ('M');
+        }
+        if ($old_val eq "\"Male\"") {
+            add_to_change_log ($change_log_for_this_file_ptr, $col_name, "\"Male\" => M");
             return ('M');
         }
         elsif ($old_val eq 'Female') {
-            $change_log_for_this_file_ptr->{'Female'} = 1;
+            add_to_change_log ($change_log_for_this_file_ptr, $col_name, 'Female => F');
+            return ('F');
+        }
+        elsif ($old_val eq "\"Female\"") {
+            add_to_change_log ($change_log_for_this_file_ptr, $col_name, "\"Female\" => F");
             return ('F');
         }
         else {
@@ -295,6 +307,7 @@ sub set_up_normalize_dictionary {
 
     $dictionary{'Case_'} = sub {
         my $old_val = shift;
+        my $col_name = shift;
         my $change_log_for_this_file_ptr = shift;
 
         my $new_val;
@@ -305,7 +318,7 @@ sub set_up_normalize_dictionary {
             my $hour = 0;
             my $minute = 0;
             $new_val = sprintf ("%04d-%02d-%02d %02d:%02d", $year, $month, $day, $hour, $minute);
-            $change_log_for_this_file_ptr->{'Case_'} = 1;
+            add_to_change_log ($change_log_for_this_file_ptr, $col_name, 'DD/MM/YY => YYYY-MM-DD');
         }
         elsif ($old_val =~ /^(\d+)\/(\d{2})\/(\d{4})/) {
             my $year = "$3";
@@ -314,11 +327,11 @@ sub set_up_normalize_dictionary {
             my $hour = 0;
             my $minute = 0;
             $new_val = sprintf ("%04d-%02d-%02d %02d:%02d", $year, $month, $day, $hour, $minute);
-            $change_log_for_this_file_ptr->{'Case_'} = 1;
+            add_to_change_log ($change_log_for_this_file_ptr, $col_name, 'D[D]/MM/YYYY => YYYY-MM-DD');
         }
         elsif ($old_val =~ /^\d{13}/) {
             $new_val = convert_epoch ($old_val);
-            $change_log_for_this_file_ptr->{'Case_'} = 1;
+            add_to_change_log ($change_log_for_this_file_ptr, $col_name, 'NNNNNNNNNNNNN => YYYY-MM-DD');
         }
         else {
             $new_val = $old_val;
@@ -327,7 +340,52 @@ sub set_up_normalize_dictionary {
         return ($new_val);
     };
 
+    #
+    # For other date values, use the same routine that is set up for Case_
+    #
+    $dictionary{'EventDate'} = $dictionary{'Case_'};
+    $dictionary{'CaseDate'} = $dictionary{'Case_'};
+    $dictionary{'ChartDate'} = $dictionary{'Case_'};
+    $dictionary{'Case1'} = $dictionary{'Case_'};
+    $dictionary{'EventDate'} = $dictionary{'Case_'};
+
     return (\%dictionary);
+}
+
+###################################################################################
+#
+#
+
+sub add_to_change_log {
+    my $change_log_for_this_file_ptr = shift;
+    my $key = shift;
+    my $val = shift;
+
+    if (exists ($change_log_for_this_file_ptr->{$key})) {
+        #
+        # A list already exists
+        #
+        my $array_ptr = $change_log_for_this_file_ptr->{$key};
+        my @val_list = @$array_ptr;
+        foreach my $v (@val_list) {
+            if ($v eq $val) {
+                #
+                # This string is already in the list. Ignore
+                #
+                return;
+            }
+        }
+
+        push (@val_list, $val);
+        $change_log_for_this_file_ptr->{$key} = \@val_list;
+        return;
+    }
+    
+    #
+    # Make a new list
+    #
+    my @new_list = $val;
+    $change_log_for_this_file_ptr->{$key} = \@new_list;
 }
 
 sub convert_epoch {
