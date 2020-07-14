@@ -5,6 +5,25 @@
     "version": "0.2.0",
     "configurations": [
 
+
+
+        {
+            "type": "perl",
+            "request": "launch",
+            "name": "oi_vey_slice.pl",
+            "console": "integratedTerminal",
+            "program": "D:/FlCovidPerlScripts/oi_vey_slice.pl",
+            "exec": "perl",
+            "execArgs": [],
+            "root": "D:/FlCovidPerlScripts/",
+            "inc": [],
+            "args": [],
+            "env": {},
+            "debugRaw": false,
+            "debugLog": false,
+            "stopOnEntry": true,
+            "sessions": "single"
+        },
         {
             "type": "perl",
             "request": "launch",
