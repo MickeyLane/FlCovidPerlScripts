@@ -21,6 +21,7 @@ use List::Util qw (shuffle);
 use POSIX;
 use File::Copy;
 use DateTime;
+use Spreadsheet::Read qw(ReadData);
 
 use lib '.';
 use translate;
@@ -31,7 +32,8 @@ package main;
 
 our $fq_root_dir_for_windows = 'D:/Covid/OiVey';
 our $fq_root_dir_for_linux = '/home/mickey/Covid/OiVey';
-our $sliced_output_file = 'sliced.csv';
+our $output_file_name = 'sliced.csv';
+our $output_file_column_header_file_name = 'output_file_column_names.txt';
 our $record_debug_limit = 3;
 
 my $cwd = Cwd::cwd();
@@ -51,7 +53,8 @@ $CWD = $dir;
 $cwd = Cwd::cwd();
 print ("Current working directory is $cwd\n");
 
-my $f = "$dir/$sliced_output_file";
+
+my $f = "$dir/$output_file_column_header_file_name";
 open (FILE, "<", $f) or die "Can not open $f: $!";
 my $output_column_header = <FILE>;
 close (FILE);
@@ -74,15 +77,9 @@ my @fq_all_dirs_by_date = '2020-07-05';
 #
 # For each directory, process all the .csv files
 #
-my @suffixlist = qw (.csv);
+my @suffixlist = qw (.xlsx);
 foreach my $fq_dir (@fq_all_dirs_by_date) {
-    my @csv_files_in_this_dir;
-    my $fq_output_file;
-
-    #
-    # Start the output file with the combined column names
-    #
-    my @raw_new_file = $output_column_header;
+    my @xlsx_files_in_this_dir;
 
     #
     # Make a list of all the .csv files in the $fq_dir. As (if) the first one
@@ -90,29 +87,47 @@ foreach my $fq_dir (@fq_all_dirs_by_date) {
     #
     opendir (DIR, $fq_dir) or die "Can't open $fq_dir: $!";
     while (my $rel_filename = readdir (DIR)) {
-        my $fq_filename = "$fq_dir/$rel_filename";
-        if (-d $fq_filename) {
+        if ($rel_filename eq $output_file_name) {
             next;
         }
 
-        if ($rel_filename eq $sliced_output_file) {
+        my $fq_filename = "$fq_dir/$rel_filename";
+        if (-d $fq_filename) {
             next;
         }
 
         my ($name, $path, $suffix) = fileparse ($fq_filename, @suffixlist);
         $path =~ s/\/\z//;
 
-        if ($suffix eq '.csv') {
-            push (@csv_files_in_this_dir, $fq_filename);
+        # if ($suffix eq '.csv') {
+            push (@xlsx_files_in_this_dir, $fq_filename);
 
-            if (!(defined ($fq_output_file))) {
-                $fq_output_file = "$path/$global_definitions::NF_csv_file_name";
-            }
-        }
+            # if (!(defined ($fq_output_file))) {
+            #     $fq_output_file = "$path/$global_definitions::NF_csv_file_name";
+            # }
+        # }
     }
 
+    #
+    # The name of the file that's going to be created
+    # This is once per directory
+    #
+    # my $i = rindex ($xlsx_files_in_this_dir[0], '/');
+    # my $path = substr ($xlsx_files_in_this_dir[0], 0, $i);
+    my $fq_output_file = "$fq_dir/$output_file_name";
+
+    #
+    # Start the output file with the combined column names
+    #
+    my $ofh;
+    open ($ofh, ">", $fq_output_file) or die "Can't create fq_output_file: $!";
+    print ($ofh $output_column_header);
+
+    #
+    # Process each input file
+    #
     my $file_number = 1;
-    foreach my $fq_filename (@csv_files_in_this_dir) {
+    foreach my $fq_filename (@xlsx_files_in_this_dir) {
 
         #
         # Report to the user
@@ -124,16 +139,49 @@ foreach my $fq_dir (@fq_all_dirs_by_date) {
         my $string = sprintf ("%02d %s", $file_number++, $fq_filename);
         print ("$string\n");
 
-        my $gender = 'F';
+        my $gender = '?';
+        my $race = '?';
+        my $i = index ($fq_filename, '_female');
+        if ($i != -1) {
+            $gender = 'F';
+        }
+        else {
+            $i = index ($fq_filename, '_male');
+            if ($i != -1) {
+                $gender = 'M';
+            }
+        }
+
+        $i = index ($fq_filename, 'black_');
+        if ($i != -1) {
+            $race = 'B';
+        }
+        else {
+            $i = index ($fq_filename, 'white_');
+            if ($i != -1) {
+                $race = 'W';
+            }
+            else {
+                $i = index ($fq_filename, 'hispanic_');
+                if ($i != -1) {
+                    $race = 'H';
+                }
+            }
+        }
+
+        if ($race eq '?' || $gender eq '?') {
+            print ("Improperly named file is $fq_filename\n");
+            exit (1);
+        }
 
         process_file (
             $fq_filename,
+            $ofh,
             $output_column_hash_ptr,
             $gender,
+            $race,
             $record_debug_limit);
     }
-
-
 }
 
 #
@@ -145,30 +193,14 @@ exit (1);
 #
 #
 sub process_file {
-    my $fbt_file = shift;
+    my $file = shift;
+    my $ofh = shift;
     my $output_column_hash_ptr = shift;
     my $gender = shift;
+    my $race = shift;
     my $record_debug_limit = shift;
 
-#     #
-#     # Define a simple list of numbers. The 1st number ([0]) represents the 1st column
-#     # in the FBT. It contains a number that represents the destination column in the 
-#     # in the new output file with the standard names
-#     #
-#     my @column_matcher;
-#     my $column_matcher_len;
-#     my @deleted_columns;
-#     my $deleted_column_list_len;
-
-#     my $NF_column_count = %$NF_hash_ptr;
-#     my @pre_initialized_NF_record;
-#     for (my $i = 0; $i < $NF_column_count; $i++) {
-#         $pre_initialized_NF_record[$i] = '';
-#     }
-
-#     #
-#     # Loop through the records in the single specified file
-#     #
+    my $book = ReadData ($file);
 
     my %begin_of_age_group_block;
     my %begin_of_age_block;
@@ -176,43 +208,26 @@ sub process_file {
     my @column_to_ignore;
 
     my $record_number = 0;
-    open (FILE, "<", $fbt_file) or die "Can not open $fbt_file: $!";
-    while (my $record = <FILE>) {
-        #
-        # Chomp seems to work differently on Windows and Linux Mint. Use the regex to get
-        # rid of any carriage control, new line characters
-        #
-        $record =~ s/[\r\n]+//;  # remove <cr><lf>
+    
+    my @rows = Spreadsheet::Read::rows($book->[1]);
+    foreach my $i (1 .. scalar @rows) {
+        my $csv_style_record = '';
+
+        foreach my $j (1 .. scalar @{$rows[$i-1]}) {
+            my $cell = ($rows[$i-1][$j-1] // '');
+            $csv_style_record .= "$cell,";
+        }
 
         #
         # If the record ends with a comma, remove it
         #
-        $record =~ s/,\z//;
+        $csv_style_record =~ s/,\z//;
 
-         $record_number++;
+        $record_number++;
 
-         my $header;
-         if ($record_number == 1) {
-            if ($record =~ /^\xef\xbb\xbf/) {
-                $header = substr ($record, 3);
-            }
-            # elsif ($record =~ /^\xfe\xff\x00\x30\x00\x20\x00\x48\x00\x45\x00\x41\x00\x44/) {
-            #     print ("File is Unicode\n");
-            #     die;
-            # }
-            else {
-                $header = $record;
-            }
-
-#             my ($column_matcher_ptr) = set_up_column_matches::set_up_column_matches (
-#                 $header,
-#                 $NF_hash_ptr);
-#             @column_matcher = @$column_matcher_ptr;
-#             $column_matcher_len = @column_matcher;
-        }
-        elsif ($record_number == 5) {
+        if ($record_number == 5) {
             print ("Line $record_number\n");
-            my @columns = split (',', $record);
+            my @columns = split (',', $csv_style_record);
             my $column_count = 0;
             my $value_count = 0;
             my @columns_with_values;
@@ -255,7 +270,7 @@ sub process_file {
             #
             #
             #
-            my @columns = split (',', $record);
+            my @columns = split (',', $csv_style_record);
             my $column_count = @columns;
 
             my $debug_string = '';
@@ -309,8 +324,7 @@ sub process_file {
             # }
         }
         elsif ($record_number == 7) {
-            print ("Line $record_number\n");
-            print ("  Header: \"$output_column_header\"\n");
+            # print ("Line $record_number\n");
         }
         elsif ($record_number > 7) {
             print ("Line $record_number\n");
@@ -328,7 +342,7 @@ sub process_file {
             #
             #
             #
-            my @columns = split (',', $record);
+            my @columns = split (',', $csv_style_record);
             my $column_count = @columns;
 
             for (my $i = 0; $i < $column_count; $i++) {
@@ -350,6 +364,7 @@ sub process_file {
                     my $ptr = init_output_line_list (
                         $output_column_count,
                         $gender,
+                        $race,
                         $output_column_hash_ptr,
                         \%begin_of_age_group_block,
                         $start_column);
@@ -366,7 +381,7 @@ sub process_file {
 
                 if ($i == $end_column) {
                     my $record_for_output = join (',', @list_for_output);
-                    print ("  Output: \"$record_for_output\"\n");
+                    print ($ofh "$record_for_output\n");
 
                     $start_column = shift (@temp);
                     my $values_left = @temp;
@@ -378,6 +393,7 @@ sub process_file {
                     my $ptr = init_output_line_list (
                         $output_column_count,
                         $gender,
+                        $race,
                         $output_column_hash_ptr,
                         \%begin_of_age_group_block,
                         $start_column);
@@ -390,12 +406,13 @@ sub process_file {
         }
     }
 
-    close (FILE);
+    # close (FILE);
 }
 
 sub init_output_line_list {
     my $output_col_cnt = shift;
     my $gender = shift;
+    my $race = shift;
     my $output_column_hash_ptr = shift;
     my $begin_of_age_group_block_ptr = shift;
     my $row_start_column = shift;
@@ -410,8 +427,11 @@ sub init_output_line_list {
 
     my $gender_column_number = $output_column_hash_ptr->{'Gender'};
 
+    my $race_column_number = $output_column_hash_ptr->{'Race'};
+
     $list[$age_group_column_number] = $age_group;
     $list[$gender_column_number] = $gender;
+    $list[$race_column_number] = $race;
 
     return (\@list);
 }
