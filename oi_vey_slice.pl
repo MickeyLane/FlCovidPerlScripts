@@ -246,14 +246,14 @@ sub process_file {
                 $column_count++;
             }
             print ("  Record 6 has $column_count columns. $value_count have values\n");
-            print ("  \%age_group_list:\n");
-            foreach my $cv (@age_group_list) {
-                print ("    $cv\n");
-            }
-            print ("  \%begin_of_age_group_block:\n");
-            while (my ($key, $val) = each %begin_of_age_group_block) {
-                print ("    $key is begin of $val\n");
-            }
+            # print ("  \%age_group_list:\n");
+            # foreach my $cv (@age_group_list) {
+            #     print ("    $cv\n");
+            # }
+            # print ("  \%begin_of_age_group_block:\n");
+            # while (my ($key, $val) = each %begin_of_age_group_block) {
+            #     print ("    $key is begin of $val\n");
+            # }
 
         }
         elsif ($record_number == 6) {
@@ -298,7 +298,7 @@ sub process_file {
 
                     # push (@column_to_ignore, $i);
 
-                    print ("    $debug_string\n");
+                    # print ("    $debug_string\n");
 
                     $debug_string = '';
 
