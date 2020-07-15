@@ -75,17 +75,49 @@ $output_column_header =~ s/[\r\n]+//;  # remove <cr><lf> if any
 my $output_column_hash_ptr = make_name_hash ($output_column_header);
 my $output_column_count = %$output_column_hash_ptr;
 
-#
-# Read dirs.txt
-#
+my $find_dirs_flag = 0;
+my ($switch_1, $switch_2) = @ARGV;
+if (defined ($switch_1)) {
+    $find_dirs_flag = 1;
+}
+
 my @fq_all_dirs_by_date;
-if (open (FILE, "<", 'dirs.txt')) {
+if ($find_dirs_flag) {
+    #
+    # Make dirs.txt
+    #
+    opendir (DIR, $dir) or die "Can't open $dir: $!";
+    while (my $fn = readdir (DIR)) {
+        if ($fn =~ /^[.]/) {
+            next;
+        }
+        my $fq_fn = "$dir/$fn";
+        if (-d $fq_fn) {
+            if ($fn =~ /(\d{4})-(\d{2})-(\d{2})/) {
+                my $date = "$1-$2-$3";
+                push (@fq_all_dirs_by_date, "$date");
+            }
+        }
+    }
+    
+    open (FILE, ">", 'dirs.txt') or die "Can't open dirs.txt: $!";
+    foreach my $w (@fq_all_dirs_by_date) {
+        print (FILE "$w\n");
+        print ("$w\n");
+    }
+    close (FILE);
+}
+else {
+    #
+    # Read dirs.txt
+    #
+    open (FILE, "<", 'dirs.txt') or die "Can't open dirs.txt: $!";
     while (my $record = <FILE>) {
         $record =~ s/[\r\n]+//;  # remove <cr><lf>
         push (@fq_all_dirs_by_date, "$cwd/$record");
     }
+    close (FILE);
 }
-close (FILE);
 
 #
 # For each directory specified in dirs.txt, process all the .xlsx files
