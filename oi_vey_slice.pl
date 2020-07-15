@@ -58,6 +58,7 @@ my $f = "$dir/$output_file_column_header_file_name";
 open (FILE, "<", $f) or die "Can not open $f: $!";
 my $output_column_header = <FILE>;
 close (FILE);
+$output_column_header =~ s/[\r\n]+//;  # remove <cr><lf> if any
 
 my $output_column_hash_ptr = make_name_hash ($output_column_header);
 my $output_column_count = %$output_column_hash_ptr;
@@ -99,36 +100,33 @@ foreach my $fq_dir (@fq_all_dirs_by_date) {
         my ($name, $path, $suffix) = fileparse ($fq_filename, @suffixlist);
         $path =~ s/\/\z//;
 
-        # if ($suffix eq '.csv') {
-            push (@xlsx_files_in_this_dir, $fq_filename);
 
-            # if (!(defined ($fq_output_file))) {
-            #     $fq_output_file = "$path/$global_definitions::NF_csv_file_name";
-            # }
-        # }
+        if ($suffix eq '.xlsx') {
+            #
+            # If the .xlsx file begins with a '~' it means the file is open in Excel
+            #
+            if ($rel_filename =~ /^[~]/) {
+                next;
+            }
+
+            push (@xlsx_files_in_this_dir, $fq_filename);
+        }
     }
 
     #
-    # The name of the file that's going to be created
-    # This is once per directory
+    # Set up the name of the file that's going to be created
+    # This is once per directory. Start the output file with the combined column names
     #
-    # my $i = rindex ($xlsx_files_in_this_dir[0], '/');
-    # my $path = substr ($xlsx_files_in_this_dir[0], 0, $i);
     my $fq_output_file = "$fq_dir/$output_file_name";
-
-    #
-    # Start the output file with the combined column names
-    #
     my $ofh;
     open ($ofh, ">", $fq_output_file) or die "Can't create fq_output_file: $!";
-    print ($ofh $output_column_header);
+    print ($ofh "$output_column_header\n");
 
     #
     # Process each input file
     #
     my $file_number = 1;
     foreach my $fq_filename (@xlsx_files_in_this_dir) {
-
         #
         # Report to the user
         #
@@ -202,9 +200,10 @@ sub process_file {
 
     my $book = ReadData ($file);
 
-    my %begin_of_age_group_block;
-    my %begin_of_age_block;
+    my %column_to_age_group_map;
+    my %column_to_age_map;
     my @age_group_list;
+    my @age_list;
     my @column_to_ignore;
 
     my $record_number = 0;
@@ -236,7 +235,7 @@ sub process_file {
                     push (@columns_with_values, "\"$v\" at $column_count");
 
                     my $age_group_string = "$v";
-                    $begin_of_age_group_block{$column_count} = $age_group_string;
+                    $column_to_age_group_map{$column_count} = $age_group_string;
 
                     push (@age_group_list, $column_count);
 
@@ -246,15 +245,6 @@ sub process_file {
                 $column_count++;
             }
             print ("  Record 6 has $column_count columns. $value_count have values\n");
-            # print ("  \%age_group_list:\n");
-            # foreach my $cv (@age_group_list) {
-            #     print ("    $cv\n");
-            # }
-            # print ("  \%begin_of_age_group_block:\n");
-            # while (my ($key, $val) = each %begin_of_age_group_block) {
-            #     print ("    $key is begin of $val\n");
-            # }
-
         }
         elsif ($record_number == 6) {
             print ("Line $record_number\n");
@@ -279,7 +269,7 @@ sub process_file {
                 if ($i == $start_column) {
                     my $sc = convert_column_number_to_excel_letters ($start_column);
                     my $ec = convert_column_number_to_excel_letters ($end_column);
-                    print ("  Column $sc to $ec is age group $begin_of_age_group_block{$start_column}\n");
+                    print ("  Column $sc to $ec is age group $column_to_age_group_map{$start_column}\n");
                 }
 
                 if ($i >= $start_column && $i < $end_column) {
@@ -288,7 +278,16 @@ sub process_file {
                         $debug_string .= ".";
                     }
                     else {
-                        $begin_of_age_block{$i} = $cell_value;
+                        if (exists ($column_to_age_map{$i})) {
+                            my $hash_ptr = $column_to_age_map{$i};
+                            $hash_ptr->{'Age'} = $cell_value;
+                        }
+                        else {
+                            my %hash;
+                            $hash{'Age'} = $cell_value;
+                            $column_to_age_map{$i} = \%hash;
+                        }
+                        push (@age_list, $i);
 
                         $debug_string .= " $cell_value";
                     }
@@ -309,36 +308,67 @@ sub process_file {
                     }
                     $end_column = $temp[0] - 1;
                 }
-
-
             }
-
-            # print ("  \%begin_of_age_block:\n");
-            # my @list_1;
-            # while (my ($key, $val) = each %begin_of_age_block) {
-            #     push (@list_1, "$key is begin of $val");
-            # }
-            # my @list_2 = sort (@list_1);
-            # foreach my $y (@list_2) {
-            #     print ("    $y\n");
-            # }
         }
         elsif ($record_number == 7) {
-            # print ("Line $record_number\n");
+            print ("Line $record_number\n");
+
+            my @columns = split (',', $csv_style_record);
+            my $column_count = @columns;
+
+            for (my $i = 0; $i < $column_count; $i++) {
+                if (exists ($column_to_age_map{$i})) {
+                    my $hash_ptr = $column_to_age_map{$i};
+                    if (!defined ($hash_ptr)) {
+                        print ("\%column_to_age_map hash ptr is missing!\n");
+                        die;
+                    }
+
+                    my $row_7_counties_map_ptr;
+                    if (exists ($hash_ptr->{'Counties'})) {
+                        $row_7_counties_map_ptr = $hash_ptr->{'Counties'};
+                    }
+                    else {
+                        my %new_hash;
+                        $row_7_counties_map_ptr = \%new_hash;
+                    }
+
+                    my $j = $i;
+                    my $done = 0;
+                    while (!$done) {
+                        my $county = $columns[$j];
+
+                        if ($county eq 'Total') {
+                            $done = 1;
+                        }
+                        else {
+                            $row_7_counties_map_ptr->{$j} = $county;
+                            $j++;
+                        }
+                    }
+
+                    $hash_ptr->{'Counties'} = $row_7_counties_map_ptr;
+
+                    # print ("\$county = $county\n");
+                }
+            }
         }
         elsif ($record_number > 7) {
             print ("Line $record_number\n");
             
             my @temp = @age_group_list;
 
-            #
-            # Figure out the start end columns for the 1st age group
-            #
-            my $start_column = shift (@temp);
-            my $end_column = $temp[0] - 1;
+            # #
+            # # Figure out the start end columns for the 1st age group
+            # #
+            # my $start_column = shift (@temp);
+            # my $end_column = $temp[0] - 1;
 
-            my @list_for_output;
             my $age;
+            my $age_group;
+            my $column_0_county;
+            my $row_7_counties_map_ptr;
+
             #
             #
             #
@@ -346,92 +376,130 @@ sub process_file {
             my $column_count = @columns;
 
             for (my $i = 0; $i < $column_count; $i++) {
-                # my $ignore_flag = 0;
-                # foreach my $c2i (@column_to_ignore) {
-                #     if ($i == $c2i) {
-                #         $ignore_flag = 1;
-                #     }
-                # }
-
-                # if ($ignore_flag) {
-                #     if ($i == $start_column || $i == $end_column) {
-                #         die;
-                #     }
-                #     next;
-                # }
-
-                if ($i == $start_column) {
-                    my $ptr = init_output_line_list (
-                        $output_column_count,
-                        $gender,
-                        $race,
-                        $output_column_hash_ptr,
-                        \%begin_of_age_group_block,
-                        $start_column);
-                    @list_for_output = @$ptr;
+                if ($i == 0) {
+                    $column_0_county = $columns[0];
+                    next;
                 }
 
-                if ($i >= $start_column && $i < $end_column) {
-                    if (exists ($begin_of_age_block{$i})) {
-                        $age = $begin_of_age_block{$i};
-                        my $age_column_number = $output_column_hash_ptr->{'Age'};
-                        $list_for_output[$age_column_number] = $age;
-                    }
+                if (exists ($column_to_age_group_map{$i})) {
+                    $age_group = $column_to_age_group_map{$i};
                 }
 
-                if ($i == $end_column) {
-                    my $record_for_output = join (',', @list_for_output);
-                    print ($ofh "$record_for_output\n");
-
-                    $start_column = shift (@temp);
-                    my $values_left = @temp;
-                    if ($values_left == 0) {
-                        last;
+                if (exists ($column_to_age_map{$i})) {
+                    my $hash_ptr = $column_to_age_map{$i};
+                    if (!defined ($hash_ptr)) {
+                        print ("\%column_to_age_map hash ptr is missing!\n");
+                        die;
                     }
-                    $end_column = $temp[0] - 1;
 
-                    my $ptr = init_output_line_list (
-                        $output_column_count,
-                        $gender,
-                        $race,
-                        $output_column_hash_ptr,
-                        \%begin_of_age_group_block,
-                        $start_column);
-                    @list_for_output = @$ptr;
+                    $age = $hash_ptr->{'Age'};
+
+                    $row_7_counties_map_ptr = $hash_ptr->{'Counties'};
+                }
+
+                #
+                # Is this dumb or what?
+                #
+                my $good_to_go = 0;
+                my $missing;
+                if (defined ($column_0_county)) {
+                    if (defined ($row_7_counties_map_ptr)) {
+                        if (defined ($age_group)) {
+                            if (defined ($race)) {
+                                if (defined ($gender)) {
+                                    if (defined ($age)) {
+                                        $good_to_go = 1;
+                                    }
+                                    else {
+                                        $missing = '$age';
+                                    }
+                                }
+                                else {
+                                    $missing = '$gender';
+                                }
+                            }
+                            else {
+                                $missing = '$race';
+                            }
+                        }
+                        else {
+                            $missing = '$age_group';
+                        }
+                    }
+                    else {
+                        $missing = '$row_7_counties_map_ptr';
+                    }
+                }
+                else {
+                    $missing = '$column_0_county';
+                }
+
+                if (!$good_to_go) {
+                    print ("At column $i, missing $missing\n");
+                    die;
+                }
+
+                if ($columns[$i] ne 0) {
+                    if (exists ($row_7_counties_map_ptr->{$i})) {
+                        my $row_7_county = $row_7_counties_map_ptr->{$i};
+                        my $deaths = $columns[$i];
+                        for (my $j = 0; $j < $deaths; $j++) {
+                            my $ptr = make_output_line_list (
+                                $output_column_hash_ptr,
+                                $output_column_count,
+                                $gender,
+                                $race,
+                                $age,
+                                $column_0_county,
+                                $row_7_county,
+                                $age_group);
+
+                            my $record_for_output = join (',', @$ptr);
+
+                            print ($ofh "$record_for_output\n");
+                        }
+                    }
                 }
             }
-
-
-            last;
         }
     }
 
     # close (FILE);
 }
 
-sub init_output_line_list {
+sub make_output_line_list {
+    my $output_column_hash_ptr = shift;
     my $output_col_cnt = shift;
     my $gender = shift;
     my $race = shift;
-    my $output_column_hash_ptr = shift;
-    my $begin_of_age_group_block_ptr = shift;
-    my $row_start_column = shift;
+    my $age = shift;
+    my $column_0_county = shift;
+    my $row_7_county = shift;
+    my $age_group = shift;
 
     my @list;
     for (my $i = 0; $i < $output_col_cnt; $i++) {
         push (@list, ' ');
     }
 
-    my $age_group = $begin_of_age_group_block_ptr->{$row_start_column};
     my $age_group_column_number = $output_column_hash_ptr->{'Age_group'};
 
     my $gender_column_number = $output_column_hash_ptr->{'Gender'};
 
     my $race_column_number = $output_column_hash_ptr->{'Race'};
 
+    my $row_county_column_number = $output_column_hash_ptr->{'RowCounty'};
+
+    my $column_0_county_column_number = $output_column_hash_ptr->{'ColumnCounty'};
+
+    my $age_column_number = $output_column_hash_ptr->{'Age'};
+
     $list[$age_group_column_number] = $age_group;
     $list[$gender_column_number] = $gender;
     $list[$race_column_number] = $race;
+    $list[$row_county_column_number] = $row_7_county;
+    $list[$column_0_county_column_number] = $column_0_county;
+    $list[$age_column_number] = $age;
 
     return (\@list);
 }
@@ -471,4 +539,3 @@ sub convert_column_number_to_excel_letters {
 }
 
 1;  # required
-
