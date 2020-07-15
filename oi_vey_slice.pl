@@ -8,11 +8,6 @@ use strict;
 # fit for any purpose whatsoever. Use at your own risk. Mileage may vary.
 #
 
-#
-# This script is horribly inefficient on purpose. Some (a lot?) of people reviewing it
-# may not know perl and being able to say "I can see that this section just does so and
-# so" will help
-#
 use File::Find;           
 use File::chdir;
 use File::Basename;
@@ -30,18 +25,30 @@ use set_up_column_matches;
 
 package main;
 
+#
+# Any variable that begins with 'fq_' is supposed to contain a fully qualified file name
+#
+
+#
+# Edit the following as needed. If you are using Linux, ignore '_windows' and vice versa
+#
 our $fq_root_dir_for_windows = 'D:/Covid/OiVey';
 our $fq_root_dir_for_linux = '/home/mickey/Covid/OiVey';
 our $output_file_name = 'sliced.csv';
 our $output_file_column_header_file_name = 'output_file_column_names.txt';
-our $record_debug_limit = 3;
 
+#
+# Get current directory and determine platform
+#
 my $cwd = Cwd::cwd();
 my $windows_flag = 0;
 if ($cwd =~ /^[C-Z]:/) {
     $windows_flag = 1;
 }
 
+#
+# Go to root dir
+#
 my $dir;
 if ($windows_flag) {
     $dir = lc $fq_root_dir_for_windows;
@@ -53,38 +60,42 @@ $CWD = $dir;
 $cwd = Cwd::cwd();
 print ("Current working directory is $cwd\n");
 
-
+#
+# Read the output .csv header row
+#
 my $f = "$dir/$output_file_column_header_file_name";
 open (FILE, "<", $f) or die "Can not open $f: $!";
 my $output_column_header = <FILE>;
 close (FILE);
 $output_column_header =~ s/[\r\n]+//;  # remove <cr><lf> if any
 
+#
+#
+#
 my $output_column_hash_ptr = make_name_hash ($output_column_header);
 my $output_column_count = %$output_column_hash_ptr;
 
 #
 # Read dirs.txt
 #
-my @fq_all_dirs_by_date = '2020-07-05';
-# if (open (FILE, "<", 'dirs.txt')) {
-#     while (my $record = <FILE>) {
-#         $record =~ s/[\r\n]+//;  # remove <cr><lf>
-#         push (@fq_all_dirs_by_date, "$cwd/$record");
-#     }
-# }
-# close (FILE);
+my @fq_all_dirs_by_date;
+if (open (FILE, "<", 'dirs.txt')) {
+    while (my $record = <FILE>) {
+        $record =~ s/[\r\n]+//;  # remove <cr><lf>
+        push (@fq_all_dirs_by_date, "$cwd/$record");
+    }
+}
+close (FILE);
 
 #
-# For each directory, process all the .csv files
+# For each directory specified in dirs.txt, process all the .xlsx files
 #
 my @suffixlist = qw (.xlsx);
 foreach my $fq_dir (@fq_all_dirs_by_date) {
     my @xlsx_files_in_this_dir;
 
     #
-    # Make a list of all the .csv files in the $fq_dir. As (if) the first one
-    # is found, make up the fully qualified name of the output file
+    # Make a list of all the .xlsx files in one date directory
     #
     opendir (DIR, $fq_dir) or die "Can't open $fq_dir: $!";
     while (my $rel_filename = readdir (DIR)) {
@@ -123,7 +134,7 @@ foreach my $fq_dir (@fq_all_dirs_by_date) {
     print ($ofh "$output_column_header\n");
 
     #
-    # Process each input file
+    # Process each file found
     #
     my $file_number = 1;
     foreach my $fq_filename (@xlsx_files_in_this_dir) {
@@ -134,8 +145,11 @@ foreach my $fq_dir (@fq_all_dirs_by_date) {
             print ("\n");
         }
 
+        #
+        # Report to the user
+        #
         my $string = sprintf ("%02d %s", $file_number++, $fq_filename);
-        print ("$string\n");
+        print ("\n$string\n");
 
         my $gender = '?';
         my $race = '?';
@@ -177,8 +191,7 @@ foreach my $fq_dir (@fq_all_dirs_by_date) {
             $ofh,
             $output_column_hash_ptr,
             $gender,
-            $race,
-            $record_debug_limit);
+            $race);
     }
 }
 
@@ -196,18 +209,19 @@ sub process_file {
     my $output_column_hash_ptr = shift;
     my $gender = shift;
     my $race = shift;
-    my $record_debug_limit = shift;
-
-    my $book = ReadData ($file);
 
     my %column_to_age_group_map;
     my %column_to_age_map;
     my @age_group_list;
     my @age_list;
     my @column_to_ignore;
+    my @csv_style_rows;
 
-    my $record_number = 0;
-    
+    #
+    # Get the Excel file into the Excel perl package
+    # Make a csv style array of rows
+    #
+    my $book = ReadData ($file);
     my @rows = Spreadsheet::Read::rows($book->[1]);
     foreach my $i (1 .. scalar @rows) {
         my $csv_style_record = '';
@@ -216,17 +230,24 @@ sub process_file {
             my $cell = ($rows[$i-1][$j-1] // '');
             $csv_style_record .= "$cell,";
         }
-
-        #
-        # If the record ends with a comma, remove it
-        #
         $csv_style_record =~ s/,\z//;
+        push (@csv_style_rows, $csv_style_record);
+    }
 
+    #
+    # Process each row
+    #
+    my $record_number = 0;
+    foreach my $record (@csv_style_rows) {
         $record_number++;
+
+        if ($record_number < 5) {
+            next;
+        }
 
         if ($record_number == 5) {
             print ("Line $record_number\n");
-            my @columns = split (',', $csv_style_record);
+            my @columns = split (',', $record);
             my $column_count = 0;
             my $value_count = 0;
             my @columns_with_values;
@@ -260,7 +281,7 @@ sub process_file {
             #
             #
             #
-            my @columns = split (',', $csv_style_record);
+            my @columns = split (',', $record);
             my $column_count = @columns;
 
             my $debug_string = '';
@@ -313,7 +334,7 @@ sub process_file {
         elsif ($record_number == 7) {
             print ("Line $record_number\n");
 
-            my @columns = split (',', $csv_style_record);
+            my @columns = split (',', $record);
             my $column_count = @columns;
 
             for (my $i = 0; $i < $column_count; $i++) {
@@ -354,15 +375,9 @@ sub process_file {
             }
         }
         elsif ($record_number > 7) {
-            print ("Line $record_number\n");
+            print ("Line $record_number");
             
-            my @temp = @age_group_list;
-
-            # #
-            # # Figure out the start end columns for the 1st age group
-            # #
-            # my $start_column = shift (@temp);
-            # my $end_column = $temp[0] - 1;
+            my $output_rows_created_for_this_input_row = 0;
 
             my $age;
             my $age_group;
@@ -372,11 +387,19 @@ sub process_file {
             #
             #
             #
-            my @columns = split (',', $csv_style_record);
+            my @columns = split (',', $record);
             my $column_count = @columns;
 
             for (my $i = 0; $i < $column_count; $i++) {
                 if ($i == 0) {
+                    if ($columns[0] eq 'Total') {
+                        last;
+                    }
+                    
+                    if ($columns[0] eq 'Unknown') {
+                        last;
+                    }
+                    
                     $column_0_county = $columns[0];
                     next;
                 }
@@ -457,9 +480,17 @@ sub process_file {
                             my $record_for_output = join (',', @$ptr);
 
                             print ($ofh "$record_for_output\n");
+                            $output_rows_created_for_this_input_row++;
                         }
                     }
                 }
+            }
+
+            if ($output_rows_created_for_this_input_row) {
+                print (" created $output_rows_created_for_this_input_row rows\n");
+            }
+            else {
+                print ("\n");
             }
         }
     }
@@ -521,21 +552,30 @@ sub make_name_hash {
 sub convert_column_number_to_excel_letters {
     my $n = shift;
 
-    my $letters;
+    my $left_letter_int = int ($n / 26);
+    my $right_letter_int = $n - ($left_letter_int * 26);
 
-    if ($n >= 1 && $n <= 26) {
-        my $ascii_val = ord ('A') + $n;
-        $letters = chr ($ascii_val);
+    if ($left_letter_int == 0) {
+        my $ascii_val = ord ('A') + $right_letter_int;
+        return (chr ($ascii_val));
     }
-    elsif ($n >= 27 && $n <= 52) {
-        my $ascii_val = ord ('A') + ($n - 26);
-        $letters = 'A' . chr ($ascii_val);
+
+    my $left_letter;
+    my $right_letter;
+    if ($left_letter_int <= 26) {
+        my $ascii_val = ord ('A') + ($left_letter_int);
+        $left_letter = chr ($ascii_val);
+        $ascii_val = ord ('A') + $right_letter_int;
+        $right_letter = chr ($ascii_val);
     }
     else {
-        $letters = 'X';
+        my $ascii_val = ord ('a') + ($left_letter_int);
+        $left_letter = chr ($ascii_val);
+        $ascii_val = ord ('a') + $right_letter_int;
+        $right_letter = chr ($ascii_val);
     }
 
-    return ($letters);
+    return ($left_letter . $right_letter);
 }
 
 1;  # required
