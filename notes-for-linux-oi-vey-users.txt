@@ -86,6 +86,12 @@ On my vanilla CentOS system, I had to install
 
 You are done. Examine new files in each date directory
 
+Notes
+-----
+As configured, oi_vey_slice will create missing date directories in whatever root directory
+you are using. Code exists to make this configurable via command line switches but that part
+is commented out
+
 Comments, requests, correction, foul language, etc. should be addressed
 to chiliwhiz@gmail.com
 
