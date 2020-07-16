@@ -39,4 +39,4 @@ our $NF_normalized_csv_file_name = 'normalized_new_file.csv';
 #
 # For actual use, set it to -1
 #
-our $record_debug_limit_value = 30;
+our $record_debug_limit_value = -1;

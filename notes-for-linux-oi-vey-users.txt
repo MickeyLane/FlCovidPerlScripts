@@ -1,0 +1,91 @@
+Notes for Linux users
+
+WHAT IS THIS?
+=============
+
+The oi_vey_slice script will read any number of _________ .xlsx files in a given date
+directory and produce a new .csv file in that directory.
+
+Note that this code NEVER modifies any of the source files it acts on.
+It creates a new file for each date and you may change what it is named.
+
+PREREQUSITES
+============
+
+Perl. Probably already functional on your system. To test, in any
+console window, issue:
+
+    $ perl -v (or maybe --version)
+
+GET
+===
+
+You can get the code via git or a zip file
+
+Git
+---
+Git may already be functional on your system. It isn't on my CentOS distro
+but I don't care as I develop on Windows.
+
+If you want to make changes to the scripts and contribute them to the
+GitHub repository (encouraged), I suggest you use Microsoft's Visual
+Studio Code (VSC) to install git. It's kind of like swatting flies with
+a hammer but VSC is an excellent editor and you can configure it to
+single-step through the code. Git is built in. Works for a bunch of
+other stuff too.
+
+Find a place on your computer where you would like to have a directory
+called FlCovidPerlScripts. Open a console window there.
+
+Issue the command:
+
+   $ git clone https://github.com/MickeyLane/FlCovidPerlScripts.git
+
+ZIP
+---
+
+Go to Github.com
+Search for FlCovidPerlScripts
+Go to the page and see a green button labeled Download. Choose zip
+
+USE
+===
+
+1) Open a console window in FlCovidPerlScripts.
+
+2) Edit oi_vey_slice.pl using whatever. Read the comments and change as needed.
+
+   Issue the command:
+
+      $ perl make_oi_vey_sliceheader.pl
+
+Possible perl error
+-------------------
+When running a perl script for the first time, you may get a message like:
+
+  Can't locate File/chdir.pm in @INC (you may need to install the
+  File::chdir module) (@INC contains: /usr/local/lib64/perl5
+  /usr/local/share/perl5 /usr/lib64/perl5/vendor_perl
+  /usr/share/perl5/vendor_perl /usr/lib64/perl5 /usr/share/perl5)
+  at make_header.pl line 16.
+
+This means that (in this case), the perl module File::chdir
+is missing from your perl installation.
+
+Issue the command:
+
+   $ yum (stuff goes here)
+   
+Use Google to find out how to update your perl using yum.
+
+On my vanilla CentOS system, I had to install
+
+   DateTime
+   File::chdir
+   Spreadsheet::Read
+
+You are done. Examine new files in each date directory
+
+Comments, requests, correction, foul language, etc. should be addressed
+to chiliwhiz@gmail.com
+

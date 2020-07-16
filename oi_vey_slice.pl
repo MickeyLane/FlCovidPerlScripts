@@ -36,6 +36,15 @@ our $fq_root_dir_for_windows = 'D:/Covid/OiVey';
 our $fq_root_dir_for_linux = '/home/mickey/Covid/OiVey';
 our $output_file_name = 'sliced.csv';
 our $output_file_column_header_file_name = 'output_file_column_names.txt';
+our $fq_cld_root_dir_for_windows = 'D:/Covid/CaseLineData';
+
+#
+# This stuff is for the name_new_dirs routine
+#
+my $dur = DateTime::Duration->new(
+    days        => 1);
+my $now = DateTime->now;
+my $last_dt;
 
 #
 # Get current directory and determine platform
@@ -75,16 +84,24 @@ $output_column_header =~ s/[\r\n]+//;  # remove <cr><lf> if any
 my $output_column_hash_ptr = make_name_hash ($output_column_header);
 my $output_column_count = %$output_column_hash_ptr;
 
-my $find_dirs_flag = 0;
-my ($switch_1, $switch_2) = @ARGV;
-if (defined ($switch_1)) {
-    $find_dirs_flag = 1;
-}
+my $find_dirs_flag = 1;
+# my ($switch_1, $switch_2) = @ARGV;
+# if (defined ($switch_1)) {
+#     $find_dirs_flag = 1;
+# }
 
 my @fq_all_dirs_by_date;
 if ($find_dirs_flag) {
     #
-    # Make dirs.txt
+    # Make missing date directories
+    #
+    my $not_done = 1;
+    while ($not_done) {
+        $not_done = make_new_dirs ($dir);
+    }
+
+    #
+    # Examine $dir and make dirs.txt
     #
     opendir (DIR, $dir) or die "Can't open $dir: $!";
     while (my $fn = readdir (DIR)) {
@@ -99,17 +116,18 @@ if ($find_dirs_flag) {
             }
         }
     }
-    
+
+    print ("Making a new dirs.txt file\n");
     open (FILE, ">", 'dirs.txt') or die "Can't open dirs.txt: $!";
     foreach my $w (@fq_all_dirs_by_date) {
         print (FILE "$w\n");
-        print ("$w\n");
+        # print ("$w\n");
     }
     close (FILE);
 }
 else {
     #
-    # Read dirs.txt
+    # Read existing dirs.txt
     #
     open (FILE, "<", 'dirs.txt') or die "Can't open dirs.txt: $!";
     while (my $record = <FILE>) {
@@ -236,7 +254,7 @@ exit (1);
 #
 #
 sub process_file {
-    my $file = shift;
+    my $fq_filename = shift;
     my $ofh = shift;
     my $output_column_hash_ptr = shift;
     my $gender = shift;
@@ -253,7 +271,7 @@ sub process_file {
     # Get the Excel file into the Excel perl package
     # Make a csv style array of rows
     #
-    my $book = ReadData ($file);
+    my $book = ReadData ($fq_filename);
     my @rows = Spreadsheet::Read::rows($book->[1]);
     foreach my $i (1 .. scalar @rows) {
         my $csv_style_record = '';
@@ -422,8 +440,14 @@ sub process_file {
             my @columns = split (',', $record);
             my $column_count = @columns;
 
+            #
+            # Loop through the columns laft to right
+            #
             for (my $i = 0; $i < $column_count; $i++) {
                 if ($i == 0) {
+                    #
+                    # Column 0 county aka place of death
+                    #
                     if ($columns[0] eq 'Total') {
                         last;
                     }
@@ -437,10 +461,19 @@ sub process_file {
                 }
 
                 if (exists ($column_to_age_group_map{$i})) {
+                    #
+                    # Current column is the begin of an age group
+                    # Nothing is done with this except put it in the output row
+                    #
                     $age_group = $column_to_age_group_map{$i};
                 }
 
                 if (exists ($column_to_age_map{$i})) {
+                    #
+                    # Column is the begin of a single age
+                    # Get a pointer to a hash that contains Age and another hash pointer. The 2nd
+                    #   hash pointer maps from column numbers to row counties aka residence counties
+                    #
                     my $hash_ptr = $column_to_age_map{$i};
                     if (!defined ($hash_ptr)) {
                         print ("\%column_to_age_map hash ptr is missing!\n");
@@ -498,6 +531,13 @@ sub process_file {
                     if (exists ($row_7_counties_map_ptr->{$i})) {
                         my $row_7_county = $row_7_counties_map_ptr->{$i};
                         my $deaths = $columns[$i];
+
+                        try_to_find_cld_matches (
+                            $fq_filename,
+                            $column_0_county,  # aka place_of_death county
+                            $row_7_county,     # aka residence county
+                        );
+
                         for (my $j = 0; $j < $deaths; $j++) {
                             my $ptr = make_output_line_list (
                                 $output_column_hash_ptr,
@@ -505,8 +545,8 @@ sub process_file {
                                 $gender,
                                 $race,
                                 $age,
-                                $column_0_county,
-                                $row_7_county,
+                                $column_0_county,  # aka place_of_death county
+                                $row_7_county,     # aka residence county
                                 $age_group);
 
                             my $record_for_output = join (',', @$ptr);
@@ -526,8 +566,6 @@ sub process_file {
             }
         }
     }
-
-    # close (FILE);
 }
 
 sub make_output_line_list {
@@ -608,6 +646,65 @@ sub convert_column_number_to_excel_letters {
     }
 
     return ($left_letter . $right_letter);
+}
+
+sub try_to_find_cld_matches {
+    my $fq_filename = shift;
+    my $column_0_county = shift;  # aka place_of_death county
+    my $row_7_county = shift;     # aka residence county
+    
+}
+
+sub make_new_dirs {
+    my $dir = shift;
+
+    my @all_date_dirs;
+    my $did_something_flag = 0;
+
+    opendir (DIR, $dir) or die "Get_db_files() can't open $dir: $!";
+    while (my $ff = readdir (DIR)) {
+        #
+        # This was used to rename a bunch of YYYY MM DD directories to YYYY-MM-DD
+        #
+        # if ($ff =~ /^(\d{4}) (\d{2}) (\d{2})/) {
+        #     my $oldff = "$dir/$ff";
+        #     my $newff = "$dir/$1-$2-$3";
+        #     rename ($oldff, $newff) or die "Can't rename $oldff: $!";
+        # }
+        if ($ff =~ /^(\d{4})-(\d{2})-(\d{2})/) {
+            push (@all_date_dirs, "$ff");
+    
+            my $current_dt = DateTime->new(
+                year       => $1,
+                month      => $2,
+                day        => $3
+            );
+
+            my $next_dt = $current_dt->add_duration ($dur);
+            if ($next_dt > $now) {
+                next;
+            }
+
+            my $next_dir_string = sprintf ("%04d-%02d-%02d",
+                $next_dt->year(),
+                $next_dt->month(),
+                $next_dt->day());
+
+            if (-e $next_dir_string) {
+                next;
+            }
+
+            print ("Creating missing date directory $next_dir_string\n");
+
+            mkdir ($next_dir_string) or die "Can't make $next_dir_string: $!";
+
+            $did_something_flag = 1;
+        }
+    }
+
+    close (DIR);
+
+    return ($did_something_flag);
 }
 
 1;  # required
