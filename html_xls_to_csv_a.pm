@@ -11,6 +11,10 @@ sub get_tagged_element {
                          # tagged <...></...> structures
     my $tag = shift;
 
+    if (!(defined ($html)) || !(defined ($tag))) {
+        goto graveyard;
+    }
+
     my $rowspan = 1;
     my $colspan = 1;
 
@@ -62,9 +66,17 @@ sub get_tagged_element {
     }
 
     return (1, $element, $rowspan, $colspan, $new_html);
+
+graveyard:
+    my ( $package, $file, $line ) = caller();
+    print ("html_xls_to_csv_a::get_tagged_element() called with bad params\n");
+    print ("  \$package = $package\n");
+    print ("  \$file = $file\n");
+    print ("  \$line = $line\n");
+    die;
 }
 
-if (1) {
+if (0) {
     my $html_1 = '<head><td colspan="14" rowspan="1">';
     my $html_2 = "<div style='font-weight:bold' " . 'title="Measures, MeasuresLevel" dmn="0">' . "Resident Deaths</div>";
     my $html_3 = "</td>stuff</head>";
@@ -97,3 +109,5 @@ if (1) {
         print ("Pass\n");
     }
 }
+
+1;
