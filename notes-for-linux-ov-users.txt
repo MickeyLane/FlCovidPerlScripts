@@ -3,7 +3,7 @@ Notes for Linux users
 WHAT IS THIS?
 =============
 
-The oi_vey_slice script will read any number of _________ .xlsx files in a given date
+The ov script will read any number of _________ .xlsx files in a given date
 directory and produce a new .csv file in that directory.
 
 Note that this code NEVER modifies any of the source files it acts on.
@@ -53,11 +53,11 @@ USE
 
 1) Open a console window in FlCovidPerlScripts.
 
-2) Edit oi_vey_slice.pl using whatever. Read the comments and change as needed.
+2) Edit ov.pl using whatever. Read the comments and change as needed.
 
    Issue the command:
 
-      $ perl make_oi_vey_sliceheader.pl
+      $ perl ov.pl
 
 Possible perl error
 -------------------
@@ -88,7 +88,7 @@ You are done. Examine new files in each date directory
 
 Notes
 -----
-As configured, oi_vey_slice will create missing date directories in whatever root directory
+As configured, ov will create missing date directories in whatever root directory
 you are using. Code exists to make this configurable via command line switches but that part
 is commented out
 
