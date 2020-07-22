@@ -4,12 +4,17 @@ use warnings FATAL => 'all';
 use strict;
 
 #
+# Return values:
 #
+#    Error: 0
+#    Success: 1
+#    Did not find requested tag: 2
 #
 sub get_tagged_element {
     my $html = shift;   # the block of something that contains one or more 
                          # tagged <...></...> structures
     my $tag = shift;
+    my $verbose = shift // 0;
 
     if (!(defined ($html)) || !(defined ($tag))) {
         goto graveyard;
@@ -23,14 +28,13 @@ sub get_tagged_element {
 
     my $start = index ($html, $begin_search_string);
     if ($start == -1) {
-        # $start = index ($block, '<td ');
-        # if ($start == -1) {
-            return (0, undef, undef);
-        # }
+        # print ("get_tagged_element() did not find <$tag>\n");
+        return (2, undef, undef);
     }
 
     my $end = index ($html, $end_search_string);
     if ($end == -1) {
+        print ("get_tagged_element() did not find </$tag>\n");
         return (0, undef, undef);
     }
 
@@ -55,10 +59,17 @@ sub get_tagged_element {
     my $element_plus_end_tag = substr ($tagged_block, $right_angle + 1);
     $left_angle = rindex ($element_plus_end_tag, '<');
     my $element = substr ($element_plus_end_tag, 0, $left_angle);
+    if (!$element =~ /\<\/\Q$tag\>\z/) {
+        die;
+    }
+    if (!$element =~ /^\<Q$tag/) {
+        die;
+    }
 
     if ($begin_tag ne "<$tag>") {
         if ($begin_tag =~ /colspan="(\d+)"/) {
             $colspan = $1;
+            # print ("Found column span of $colspan\n");
         }
         if ($begin_tag =~ /rowspan="(\d+)"/) {
             $rowspan = $1;

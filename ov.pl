@@ -22,6 +22,7 @@ use lib '.';
 use translate;
 use global_definitions;
 use set_up_column_matches;
+use html_xls_to_csv;
 
 package main;
 
@@ -84,7 +85,9 @@ $output_column_header =~ s/[\r\n]+//;  # remove <cr><lf> if any
 my $output_column_hash_ptr = make_name_hash ($output_column_header);
 my $output_column_count = %$output_column_hash_ptr;
 
-my $find_dirs_flag = 1;
+my $find_dirs_flag = 0;
+my $use_hard_coded_flag = 1;
+
 # my ($switch_1, $switch_2) = @ARGV;
 # if (defined ($switch_1)) {
 #     $find_dirs_flag = 1;
@@ -125,6 +128,9 @@ if ($find_dirs_flag) {
     }
     close (FILE);
 }
+elsif ($use_hard_coded_flag) {
+    push (@fq_all_dirs_by_date, "$cwd/2020-07-16");
+}
 else {
     #
     # Read existing dirs.txt
@@ -140,9 +146,9 @@ else {
 #
 # For each directory specified in dirs.txt, process all the .xlsx files
 #
-my @suffixlist = qw (.xlsx);
+my @suffixlist = qw (.xlsx .xls .htm);
 foreach my $fq_dir (@fq_all_dirs_by_date) {
-    my @xlsx_files_in_this_dir;
+    my @files_in_this_dir;
 
     #
     # Make a list of all the .xlsx files in one date directory
@@ -170,7 +176,13 @@ foreach my $fq_dir (@fq_all_dirs_by_date) {
                 next;
             }
 
-            push (@xlsx_files_in_this_dir, $fq_filename);
+            push (@files_in_this_dir, $fq_filename);
+        }
+        elsif ($suffix eq '.htm') {
+            push (@files_in_this_dir, $fq_filename);
+        }
+        elsif ($suffix eq '.xls') {
+            push (@files_in_this_dir, $fq_filename);
         }
     }
 
@@ -187,7 +199,7 @@ foreach my $fq_dir (@fq_all_dirs_by_date) {
     # Process each file found
     #
     my $file_number = 1;
-    foreach my $fq_filename (@xlsx_files_in_this_dir) {
+    foreach my $fq_filename (@files_in_this_dir) {
         #
         # Report to the user
         #
@@ -201,47 +213,11 @@ foreach my $fq_dir (@fq_all_dirs_by_date) {
         my $string = sprintf ("%02d %s", $file_number++, $fq_filename);
         print ("\n$string\n");
 
-        my $gender = '?';
-        my $race = '?';
-        my $i = index ($fq_filename, '_female');
-        if ($i != -1) {
-            $gender = 'F';
-        }
-        else {
-            $i = index ($fq_filename, '_male');
-            if ($i != -1) {
-                $gender = 'M';
-            }
-        }
-
-        $i = index ($fq_filename, 'black_');
-        if ($i != -1) {
-            $race = 'B';
-        }
-        else {
-            $i = index ($fq_filename, 'white_');
-            if ($i != -1) {
-                $race = 'W';
-            }
-            else {
-                $i = index ($fq_filename, 'hispanic_');
-                if ($i != -1) {
-                    $race = 'H';
-                }
-            }
-        }
-
-        if ($race eq '?' || $gender eq '?') {
-            print ("Improperly named file is $fq_filename\n");
-            exit (1);
-        }
 
         process_file (
             $fq_filename,
             $ofh,
-            $output_column_hash_ptr,
-            $gender,
-            $race);
+            $output_column_hash_ptr);
     }
 }
 
@@ -257,8 +233,6 @@ sub process_file {
     my $fq_filename = shift;
     my $ofh = shift;
     my $output_column_hash_ptr = shift;
-    my $gender = shift;
-    my $race = shift;
 
     my %column_to_age_group_map;
     my %column_to_age_map;
@@ -266,22 +240,51 @@ sub process_file {
     my @age_list;
     my @column_to_ignore;
     my @csv_style_rows;
+    my $gender = '?';
+    my $race = '?';
+    my $ethnicity = '?';
 
     #
     # Get the Excel file into the Excel perl package
     # Make a csv style array of rows
     #
-    my $book = ReadData ($fq_filename);
-    my @rows = Spreadsheet::Read::rows($book->[1]);
-    foreach my $i (1 .. scalar @rows) {
-        my $csv_style_record = '';
-
-        foreach my $j (1 .. scalar @{$rows[$i-1]}) {
-            my $cell = ($rows[$i-1][$j-1] // '');
-            $csv_style_record .= "$cell,";
+    if ($fq_filename =~ /.xls\z/) {
+        my @html_records;
+        open (FILE, "<", $fq_filename) or die "Can not open $fq_filename: $!";
+        while (my $record = <FILE>) {
+            chomp ($record);
+            push (@html_records, $record);
         }
-        $csv_style_record =~ s/,\z//;
-        push (@csv_style_rows, $csv_style_record);
+
+        my $html = join ('', @html_records);
+        my $entire_file_len = length ($html);
+        # print ("Entire file is $entire_file_len characters\n");
+
+        my ($status, $csv_ptr) = html_xls_to_csv::html_xls_to_csv ($html, 1);
+        if (!$status) {
+            print ("Fail\n");
+            exit (1);
+        }
+
+        @csv_style_rows = @$csv_ptr;
+    }
+    elsif ($fq_filename =~ /.xlsx\z/) {
+        my $book = ReadData ($fq_filename);
+        my @rows = Spreadsheet::Read::rows($book->[1]);
+        foreach my $i (1 .. scalar @rows) {
+            my $csv_style_record = '';
+
+            foreach my $j (1 .. scalar @{$rows[$i-1]}) {
+                my $cell = ($rows[$i-1][$j-1] // '');
+                $csv_style_record .= "$cell,";
+            }
+            $csv_style_record =~ s/,\z//;
+            push (@csv_style_rows, $csv_style_record);
+        }
+    }
+    else {
+        print ("Can't process $fq_filename\n");
+        exit (1);
     }
 
     #
@@ -291,8 +294,67 @@ sub process_file {
     foreach my $record (@csv_style_rows) {
         $record_number++;
 
-        if ($record_number < 5) {
+        if ($record_number == 1 || $record_number == 3 || $record_number == 4) {
             next;
+        }
+
+        if ($record_number == 2) {
+            my $lower_case_record = lc $record;
+            my $i = index ($lower_case_record, 'sex=female');
+            if ($i != -1) {
+                $gender = 'F';
+            }
+            else {
+                $i = index ($lower_case_record, 'sex=male');
+                if ($i != -1) {
+                    $gender = 'M';
+                }
+            }
+
+            $i = index ($lower_case_record, 'race=black');
+            if ($i != -1) {
+                $race = 'B';
+            }
+            else {
+                $i = index ($lower_case_record, 'race=white');
+                if ($i != -1) {
+                    $race = 'W';
+                }
+                else {
+                    $i = index ($lower_case_record, 'race=other');
+                    if ($i != -1) {
+                        $race = 'O';
+                    }
+                    else {
+                        $i = index ($lower_case_record, 'race=unknown');
+                        if ($i != -1) {
+                            $race = 'U';
+                        }
+                    }
+                }
+            }
+
+            $i = index ($lower_case_record, 'ethnicity=non-hispanic');
+            if ($i != -1) {
+                $ethnicity = 'N';
+            }
+            else {
+                $i = index ($lower_case_record, 'ethnicity=hispanic');
+                if ($i != -1) {
+                    $ethnicity = 'H';
+                }
+                else {
+                    $i = index ($lower_case_record, 'ethnicity=unknown');
+                    if ($i != -1) {
+                        $ethnicity = 'U';
+                    }
+                }
+            }
+
+            if ($race eq '?' || $gender eq '?' || $ethnicity eq '?') {
+                print ("Did not extract proper info from \"$lower_case_record\"\n");
+                exit (1);
+            }
         }
 
         if ($record_number == 5) {
@@ -425,7 +487,7 @@ sub process_file {
             }
         }
         elsif ($record_number > 7) {
-            print ("Line $record_number");
+            print ("Line $record_number\n");
             
             my $output_rows_created_for_this_input_row = 0;
 
@@ -494,9 +556,14 @@ sub process_file {
                     if (defined ($row_7_counties_map_ptr)) {
                         if (defined ($age_group)) {
                             if (defined ($race)) {
-                                if (defined ($gender)) {
+                                if (defined ($gender) && $gender =~ /[MF]/) {
                                     if (defined ($age)) {
-                                        $good_to_go = 1;
+                                        if (defined ($ethnicity)) {
+                                            $good_to_go = 1;
+                                        }
+                                        else {
+                                            $missing = '$ethnicity';
+                                       }
                                     }
                                     else {
                                         $missing = '$age';
@@ -545,6 +612,7 @@ sub process_file {
                                 $gender,
                                 $race,
                                 $age,
+                                $ethnicity,
                                 $column_0_county,  # aka place_of_death county
                                 $row_7_county,     # aka residence county
                                 $age_group);
@@ -574,6 +642,7 @@ sub make_output_line_list {
     my $gender = shift;
     my $race = shift;
     my $age = shift;
+    my $ethnicity = shift;
     my $column_0_county = shift;
     my $row_7_county = shift;
     my $age_group = shift;
@@ -595,12 +664,15 @@ sub make_output_line_list {
 
     my $age_column_number = $output_column_hash_ptr->{'Age'};
 
+    my $ethnicity_column_number = $output_column_hash_ptr->{'Ethnicity'};
+
     $list[$age_group_column_number] = $age_group;
     $list[$gender_column_number] = $gender;
     $list[$race_column_number] = $race;
     $list[$row_county_column_number] = $row_7_county;
     $list[$column_0_county_column_number] = $column_0_county;
     $list[$age_column_number] = $age;
+    $list[$ethnicity_column_number] = $ethnicity;
 
     return (\@list);
 }

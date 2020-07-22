@@ -13,177 +13,129 @@ sub html_xls_to_csv {
     my $commas = ',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,';
 
     #
-    # BODY
+    # Get BODY
     #
-    
     my ($status, $body, $rowspan, $colspan, $new_html) = html_xls_to_csv_a::get_tagged_element ($html, 'body');
-    if (!$status) {
+    $html = $new_html;
+    if ($status != 1) {
         if ($verbose) {
             print ("Unable to isolate the body\n");
         }
         return (0, undef);
     }
 
-    # print ("Body is $body_len characters\n");
-
-    $html = $new_html;
-
-
     #
-    # TABLE
+    # Get TABLE
     #
     my $table;
     ($status, $table, $rowspan, $colspan, $new_html) = html_xls_to_csv_a::get_tagged_element ($body, 'table');
-    if (!$status) {
+    $body = $new_html;
+    if ($status != 1) {
         if ($verbose) {
             print ("Unable to isolate the table\n");
         }
         return (0, undef);
     }
 
-    # print ("Table is $table_len characters\n");
-    # print ("Body is now $body_len characters\n");
-
-    $body = $new_html;
-
-    # open (FILE, ">", "body.txt") or die "Can not open body.txt: $!";
-    # print (FILE $body);
-    # close (FILE);
-
     #
-    # THEAD
+    # Get TABLE HEAD
     #
     my $thead;
     ($status, $thead, $rowspan, $colspan, $new_html) = html_xls_to_csv_a::get_tagged_element ($table, 'thead');
-    if (!$status) {
+    $table = $new_html;
+    if ($status != 1) {
         if ($verbose) {
             print ("Unable to isolate the table head\n");
         }
         return (0, undef);
     }
 
-    $table = $new_html;
-
-    # print ("Thead is $thead_len characters\n");
-    # print ("Table is now $table_len characters\n");
-
-    # open (FILE, ">", "thead.txt") or die "Can not open thead.txt: $!";
-    # print (FILE $thead);
-    # close (FILE);
-
-    # open (FILE, ">", "table.txt") or die "Can not open table.txt: $!";
-    # print (FILE $table);
-    # close (FILE);
-
     #
-    # TBODY
+    # Get TABLE BODY
     #
     my $tbody;
     ($status, $tbody, $rowspan, $colspan, $new_html) = html_xls_to_csv_a::get_tagged_element ($table, 'tbody');
-    if (!$status) {
+    $table = $new_html;
+    if ($status != 1) {
         if ($verbose) {
             print ("Unable to isolate the table body\n");
         }
         return (0, undef);
     }
 
-    $table = $new_html;
-
-    # print ("Tbody is $tbody_len characters\n");
-    # print ("Table is now $table_len characters\n");
-
-    # open (FILE, ">", "tbody.txt") or die "Can not open tbody.txt: $!";
-    # print (FILE $tbody);
-    # close (FILE);
-
     my @out_file;
+    my @body_csv_records;
 
     #
-    # BODY LINES
+    # Parse BODY LINES
     #
     # This allows the determination of the overall line length
     #
-    my @body_csv_records;
+    # "Row" refers to an entire csv row including trailing commas
+    #
     my $new_block_of_html;
     my $csv_record;
     $status = 1;
-    while ($status) {
-        ($status, $csv_record, $new_block_of_html) = tbody_lines ($tbody);
-        if ($status) {
+    while ($status == 1) {
+        ($status, $csv_record, $new_block_of_html) = get_a_county_row ($tbody);
+        if ($status == 1) {
             push (@body_csv_records, $csv_record);
             $tbody = $new_block_of_html;
         }
-    }
-
-    my $out_file_csv_comma_count = ($body_csv_records[0] =~ tr/,/,/);
-
-    #
-    # OTHER
-    #
-    my @thead_csv_records;
-    $status = 1;
-    while ($status) {
-        ($status, $csv_record, $new_block_of_html) = get_a_thead_row ($thead, $out_file_csv_comma_count);
-        if ($status) {
-            if (!(defined ($csv_record))) {
-                die;
-            }
-            push (@thead_csv_records, $csv_record);
-            $thead = $new_block_of_html;
+        elsif ($status == 0) {
+            die;
         }
     }
 
-    if (!@thead_csv_records) {
-        die;
+    my $out_file_csv_column_count = ($body_csv_records[0] =~ tr/,/,/) + 1;
+    if ($verbose) {
+        print ("Output csv file has $out_file_csv_column_count columns\n");
     }
 
     #
-    # TOP 2 LINES
+    # Parse HEADER LINES
     #
-    my $top_csv_records_ptr = top_lines ($body, $out_file_csv_comma_count, $commas);
+    my $header_csv_record_ptr = get_header_rows ($thead, $out_file_csv_column_count, $commas, $verbose);
+
+    #
+    # Parse TOP 2 LINES
+    #
+    my $top_csv_records_ptr = get_top_rows ($body, $out_file_csv_column_count, $commas, $verbose);
 
     #
     # MAKE CSV
     #
     push (@out_file, @$top_csv_records_ptr);
-    push (@out_file, @thead_csv_records);
+    push (@out_file, @$header_csv_record_ptr);
     push (@out_file, @body_csv_records);
-
-    # #
-    # #
-    # #
-    # my $out_fn = $fn;
-    # $out_fn =~ s/xls\z/csv/;
-    # open (FILE, ">", $out_fn) or die "Can not open $out_fn: $!";
-    # foreach my $rr (@out_file) {
-    #     print (FILE "$rr\n");
-    # }
-    # close (FILE);
-
-    # exit (1);
 
     return (1, \@out_file);
 }
 
-sub top_lines {
+#
+# <x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Resident Death Counts by Year by Age by Recorded County by Residence County</x:Name><x:WorksheetOptions><x:Print><x:ValidPrinterInfo/></x:Print></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--> 
+# </head>
+# <body>
+# <b>Resident Death Counts by Year by Age by Recorded County by Residence County<br />
+# 113 Causes of Death=Other & Unspecified Infectious/Parasitic Disease & Sequelae and Sex=Male and Race=Black and Ethnicity=Hispanic<br /></b><table cellSpacing='5' cellPadding='0' width='100%' align='center' border='1'>
+sub get_top_rows {
     my $body = shift;
-    my $out_file_csv_comma_count = shift;
+    my $out_file_csv_column_count = shift;
     my $commas = shift;
-
-    print ("\$out_file_csv_comma_count = $out_file_csv_comma_count\n");
+    my $verbose = shift // 0;
 
     my @out_file;
 
-    my $begin = '<body><b>';
-    if (!$body =~ /^\Q$begin/) {
+    my $begin = '<b>';
+    if (!($body =~ /^\Q$begin/)) {
         die;
     }
-    my $start_br = 9;
+    my $start_br = length ($begin);
     my $end_br = index ($body, '<br />');
     my $br_len = $end_br - $start_br;
-    my $r = substr ($body, 9, $end_br - $start_br);
+    my $r = substr ($body, $start_br, $br_len);
 
-    $r .= substr ($commas, 0, $out_file_csv_comma_count);
+    $r .= substr ($commas, 0, $out_file_csv_column_count - 1);
 
     push (@out_file, $r);
 
@@ -192,7 +144,7 @@ sub top_lines {
     $br_len = index ($new_body, '<br />');
     $r = substr ($new_body, 0, $br_len);
 
-    $r .= substr ($commas, 0, $out_file_csv_comma_count);
+    $r .= substr ($commas, 0, $out_file_csv_column_count - 1);
 
     push (@out_file, $r);
 
@@ -201,88 +153,85 @@ sub top_lines {
 
 
 #
+# Typical input:
+#
+#    	<tr>
+#			<th colspan="1" rowspan="1">Miami-Dade</th><td>1</td><td>1</td><td>1</td>
+#               <td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td>
+#               <td>1</td><td>4</td><td>5</td><td>5</td>
+#		</tr>
+#
 # Typical output:
 #
 #    Miami-Dade,1,1,1,1,1,1,1,1,1,1,1,4,5,5
 #
-sub tbody_lines {
-    my $tbody = shift;
+sub get_a_county_row {
+    my $input_html = shift;
+    my $verbose = shift // 0;
 
-    my @out_file_csv_record_list;
-    my $out_file_csv_record;
+    my $out_file_csv_record = '';
 
-    my ($status, $trow, $new_tbody) = get_trow ($tbody);
-    if ($status) {
-        $tbody = $new_tbody;
-        my $tbody_len = length ($tbody);
-
-        my $trow_len = length ($trow);
-
-        print ("Trow is $trow_len characters\n");
-        print ("Tbody is now $tbody_len characters\n");
-
+    #
+    # Get a row
+    #
+    my ($status, $county_row, $rowspan, $colspan, $html_to_return) = 
+        html_xls_to_csv_a::get_tagged_element ($input_html, 'tr', $verbose);
+    if ($status != 1) {
         #
-        # TROW HEADER
+        # Status can be 0 (error) or 2 (no more <tr> elements)
         #
-        my $theader_start = index ($trow, '<th ');
-        my $theader_end = index ($trow, '</th>');
-        my $theader_len = $theader_end - $theader_start + 5;
-
-        my $theader = substr ($trow, $theader_start, $theader_len);
-        if (!$theader =~ /\<\/th\>\z/) {
-            die;
-        }
-        if (!$theader =~ /^\<th /) {
-            die;
-        }
-        my $theader_len_2 = length ($theader);
-        if ($theader_len != $theader_len_2) {
-            die;
-        }
-
-        my $new_trow_left = substr ($trow, 0, $theader_start);
-        my $new_trow_right = substr ($trow, $theader_end + 5);
-        $trow = $new_trow_left . $new_trow_right;
-        $trow_len = length ($trow);
-
-        my $h = get_argument ($theader);
-        push (@out_file_csv_record_list, $h);
-
-        print ("Theader is $theader_len characters\n");
-        print ("Trow is now $trow_len characters\n");
-
-        open (FILE, ">", "trow.txt") or die "Can not open trow.txt: $!";
-        print (FILE $trow);
-        close (FILE);
-
-        # print ("  $h\n");
-
-        my $done = 0;
-        while (!$done) {
-            my $begin = index ($trow, '<td');
-            if ($begin != -1) {
-                my $end = index ($trow, '</td>');
-                my $len = $end - $begin + 5;
-                my $td = substr ($trow, $begin, $len);
-                my $td_arg = get_argument ($td);
-                my $left = substr ($trow, 0, $begin);
-                my $right = substr ($trow, $end + 5);
-                $trow = $left . $right;
-                # print ("$td\n");
-                push (@out_file_csv_record_list, $td_arg);
-
-                # print ("    $td_arg\n");
-            }
-            else {
-                $done = 1;
-            }
-        }
-
-        $out_file_csv_record = join (',', @out_file_csv_record_list);
-
+        return ($status, undef, undef);
     }
 
-    return ($status, $out_file_csv_record, $tbody);
+    #
+    # A row has a <th> followed by a bunch of <td>
+    #
+    my $row_header;
+    my $remaining_row;
+    ($status, $row_header, $rowspan, $colspan, $remaining_row) = 
+        html_xls_to_csv_a::get_tagged_element ($county_row, 'th', $verbose);
+    $county_row = $remaining_row;
+    if ($status != 1) {
+        #
+        # Status can be 0 (error) or 2 (no more <tr> elements)
+        #
+        return ($status, undef, undef);
+    }
+
+    # print ("\$row_header = $row_header\n");
+    $out_file_csv_record .= "$row_header";
+
+    my $row_data;
+    $status = 1;
+    while ($status == 1) {
+        ($status, $row_data, $rowspan, $colspan, $remaining_row) = 
+            html_xls_to_csv_a::get_tagged_element ($county_row, 'td', $verbose);
+        $county_row = $remaining_row;
+        #
+        # Status can be 0 (error), 1 (success) or 2 (no more <tr> elements)
+        #
+        if ($status == 0) {
+            return ($status, undef, undef);
+        }
+        elsif ($status == 1) {
+            # print ("\$row_data = $row_data\n");
+            $out_file_csv_record .= ",$row_data";
+        }
+    }
+
+    #
+    # If $status is 2, the loop above terminated because there was no work to do
+    # If $out_file_csv_record is not empty, return it with $status = 1
+    #
+    if ($status == 2 && length ($out_file_csv_record) > 0) {
+        # print ("get_a_county_row() is returning status 1 with csv row \"$out_file_csv_record\"\n");
+        $status = 1;
+    }
+    else {
+        print ("get_a_county_row() is returning status $status\n");
+    }
+
+    return ($status, $out_file_csv_record, $html_to_return);
 }
 
 sub get_argument {
@@ -295,167 +244,144 @@ sub get_argument {
 
     my $header_argument = substr ($theader, $left, $len);
 
+    # $header_argument =~ s/[^A-Za-z ]//g;
 
     return ($header_argument);
 }
 
-sub get_trow {
-    my $block = shift;   # the block of something that contains one or more 
-                         # trow <tr></tr> structures
-
-    my $start = index ($block, '<tr>');
-    if ($start == -1) {
-        $start = index ($block, '<tr ');
-        if ($start == -1) {
-            return (0, undef, undef);
-        }
-    }
-
-    my $end = index ($block, '</tr>');
-    my $len = $end - $start + 5;
-
-    my $trow = substr ($block, $start, $len);
-    if (!$trow =~ /\<\/tr\>\z/) {
-        die;
-    }
-    if (!$trow =~ /^\<tr/) {
-        die;
-    }
-    my $len_2 = length ($trow);
-    if ($len != $len_2) {
-        die;
-    }
-
-    my $new_block_left = substr ($block, 0, $start);
-    my $new_block_right = substr ($block, $end + 5);
-    $block = $new_block_left . $new_block_right;
-    # $block_len = length ($block);
-
-    return (1, $trow, $block);
-}
-
 #
+#   0
+#  ===
 # <td rowspan="5">
-# <div style='font-weight:bold'>     </div>
+#   <div style='font-weight:bold'>			</div>
 # </td>
 #
-sub get_td_with_span {
-    my $block = shift;   # the block of something that contains one or more 
-                         # td <td></td> structures
+# <td colspan="14" rowspan="1">
+#   <div style='font-weight:bold' title="Measures, MeasuresLevel" dmn="0">				Resident Deaths			</div>
+# </td>
+#
+#   1
+#  ===
+#
+# <td colspan="13" rowspan="1">
+#   <div style='font-weight:bold' title="Year, Year" dmn="1">				2020 (Provisional)			</div>
+# </td>
+#
+# <td colspan="1" rowspan="4"  style='font-weight:bold' total="1">
+#   <div style='font-weight:bold' title="Recorded County, (All)" dmn="3">				Total			</div>
+# </td>
+sub get_header_rows {
+    my $input_html = shift;
+    my $out_file_csv_column_count = shift;
+    my $commas = shift;
+    my $verbose = shift // 0;
 
-    my $span = 1;
+    #
+    # Initialize a grid
+    #
+    my @csv_row_matrix;
+    my @csv_row_length;
+    for (my $row = 0; $row < 10; $row++) {
+        for (my $col = 0; $col < $out_file_csv_column_count; $col++) {
+            $csv_row_matrix[$col][$row] = '';
+        }
+        $csv_row_length[$row] = 0;
+    }
+    my $current_row = 0;
+    my $trow;
+    my $rowspan;
+    my $colspan;
+    my $remaining_html = $input_html;
+    my $html_to_return;
+    my $new_html;
 
-    my $start = index ($block, '<td>');
-    if ($start == -1) {
-        $start = index ($block, '<td ');
-        if ($start == -1) {
-            return (0, undef, undef);
+    #
+    # Get a row
+    #
+    my $row_status = 1;
+    while ($row_status == 1) {
+        ($row_status, $trow, $rowspan, $colspan, $new_html) = html_xls_to_csv_a::get_tagged_element ($remaining_html, 'tr', $verbose);
+        $remaining_html = $new_html;
+        if ($row_status == 0) {
+            return (undef);
+        }
+        elsif ($row_status == 1) {
+
+            if ($rowspan != 1 || $colspan != 1) {
+                die;
+            }
+
+            #
+            # Iterate through the data in the header row
+            #
+            my $td;
+            my $new_trow;
+            my $data_element = 0;
+            my $data_status = 1;
+            # my $effective_column = -1;
+            while ($data_status == 1) {
+                ($data_status, $td, $rowspan, $colspan, $new_trow) = html_xls_to_csv_a::get_tagged_element ($trow, 'td', $verbose);
+                $trow = $new_trow;
+                if ($data_status == 0) {
+                    return (undef);
+                }
+                elsif ($data_status == 1) {
+                    print ("\nRow = $current_row, Data element = $data_element\n");
+                    $data_element++;
+                    #
+                    # Get and trim argument. May be a null string afterwards
+                    #
+                    my $arg = get_argument ($td);
+                    $arg =~ s/^\s+//; # leading white space
+                    $arg =~ s/\s+$//; # trailing white space
+
+                    print ("  Row span = $rowspan, col span = $colspan, arg = \"$arg\"\n");
+
+                    #
+                    #
+                    #
+                    my $col = $csv_row_length[$current_row];
+                    for (my $row_iterator = 0; $row_iterator < $rowspan; $row_iterator++) {
+                        my $row = $current_row + $row_iterator;
+                        $csv_row_matrix[$col][$row] = $arg;
+                        print ("  Adding \"$arg\" to col [$col] row [$row]\n");
+                        $csv_row_length[$row] += $colspan;
+                    }
+                }
+            }
+            
+            $current_row++;
+            if ($current_row > 6) {
+                die;
+            }
         }
     }
 
-    my $end = index ($block, '</td>');
-    my $len = $end - $start + 5;
+    #
+    # If $status is 2, the loop above terminated because there was no work to do
+    # If $out_file_csv_record is not empty, return it with $status = 1
+    #
+    if (($row_status == 2) && ($csv_row_length[0] > 0)) {
+        print ("get_a_header_row() is returning status 1\n");
+        # my $cc = ($out_file_csv_record =~ tr/','//);
+        # print ("  column count $cc\n");
 
-    my $td = substr ($block, $start, $len);
-    if (!$td =~ /\<\/td\>\z/) {
-        die;
-    }
-    if (!$td =~ /^\<td/) {
-        die;
-    }
-    my $len_2 = length ($td);
-    if ($len != $len_2) {
-        die;
+        my @return_array;
+
+        for (my $row = 0; $row < $current_row; $row++) {
+            my $csv_row_record = $csv_row_matrix[0][$row];
+            for (my $col = 1; $col < $out_file_csv_column_count; $col++) {
+                $csv_row_record .= ",$csv_row_matrix[$col][$row]";
+            }
+            push (@return_array, $csv_row_record);
+            print ("  csv row \"$csv_row_record\"\n");
+        }
+
+        return (\@return_array);
     }
 
-    my $new_block_left = substr ($block, 0, $start);
-    my $new_block_right = substr ($block, $end + 5);
-    $block = $new_block_left . $new_block_right;
-    # $block_len = length ($block);
-
-    return (1, $td, $span, $block);
+    print ("\$row_status = $row_status\n");
+    die;
 }
-
-# sub get_a_thead_row {
-#     my $thead = shift;
-
-#     my @out_file_csv_record_list;
-#     my $out_file_csv_record;
-
-#     my ($status, $trow, $new_thead) = get_trow ($thead);
-#     if ($status == 0) {
-#         return (0);
-#     }
-
-#     $thead = $new_thead;
-#     my $thead_len = length ($thead);
-#     my $trow_len = length ($trow);
-
-#     print ("In get_a_thead_row(), trow is $trow_len characters\n");
-#     print ("  Thead is now $thead_len characters\n");
-
-#     #
-#     # TROW HEADER
-#     #
-#     my $theader_start = index ($trow, '<th ');
-#     my $theader_end = index ($trow, '</th>');
-#     my $theader_len = $theader_end - $theader_start + 5;
-
-#     my $theader = substr ($trow, $theader_start, $theader_len);
-#     if (!$theader =~ /\<\/th\>\z/) {
-#         die;
-#     }
-#     if (!$theader =~ /^\<th /) {
-#         die;
-#     }
-#     my $theader_len_2 = length ($theader);
-#     if ($theader_len != $theader_len_2) {
-#         die;
-#     }
-# q
-        # my $new_trow_left = substr ($trow, 0, $theader_start);
-        # my $new_trow_right = substr ($trow, $theader_end + 5);
-        # $trow = $new_trow_left . $new_trow_right;
-        # $trow_len = length ($trow);
-
-        # my $h = get_argument ($theader);
-        # push (@out_file_csv_record_list, $h);
-
-        # print ("Theader is $theader_len characters\n");
-        # print ("Trow is now $trow_len characters\n");
-
-        # open (FILE, ">", "trow.txt") or die "Can not open trow.txt: $!";
-        # print (FILE $trow);
-        # close (FILE);
-
-        # # print ("  $h\n");
-
-        # my $done = 0;
-        # while (!$done) {
-        #     my $begin = index ($trow, '<td');
-        #     if ($begin != -1) {
-        #         my $end = index ($trow, '</td>');
-        #         my $len = $end - $begin + 5;
-        #         my $td = substr ($trow, $begin, $len);
-        #         my $td_arg = get_argument ($td);
-        #         my $left = substr ($trow, 0, $begin);
-        #         my $right = substr ($trow, $end + 5);
-        #         $trow = $left . $right;
-        #         # print ("$td\n");
-        #         push (@out_file_csv_record_list, $td_arg);
-
-        #         # print ("    $td_arg\n");
-        #     }
-        #     else {
-        #         $done = 1;
-        #     }
-        # }
-
-        # $out_file_csv_record = join (',', @out_file_csv_record_list);
-
-#     }
-
-#     return ($status, $out_file_csv_record, $tbody);
-# }
 
 1;
