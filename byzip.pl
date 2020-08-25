@@ -38,6 +38,8 @@ our $fq_root_dir_for_linux = '/home/mickey/Covid/ByZip';
 # our $fq_cld_root_dir_for_windows = 'D:/Covid/CaseLineData';
 
 my $pp_report_header_changes = 0;
+my $pp_report_collection_messages = 0;
+my $pp_create_missing_directories = 0;
 
 #
 # This stuff is for the name_new_dirs routine
@@ -106,12 +108,14 @@ my @date_dirs;
 my @csv_files;
 
 if ($find_dirs_flag) {
-    #
-    # Make missing date directories
-    #
-    my $not_done = 1;
-    while ($not_done) {
-        $not_done = make_new_dirs ($dir);
+    if ($pp_create_missing_directories) {
+        #
+        # Make missing date directories
+        #
+        my $not_done = 1;
+        while ($not_done) {
+            $not_done = make_new_dirs ($dir);
+        }
     }
 
     #
@@ -160,6 +164,7 @@ my $cases_column_offset;
 my $zip_column_offset;
 my @cases_list;
 my $previous_cases = 0;
+my $case_serial_number = 1;
 
 #
 # COLLECT DATA
@@ -170,7 +175,9 @@ my $previous_cases = 0;
 print ("Searching for .csv files...\n");
 my @suffixlist = qw (.csv);
 foreach my $dir (@date_dirs) {
-    print ("$dir...\n");
+    if ($pp_report_collection_messages) {
+        print ("$dir...\n");
+    }
 
     opendir (DIR, $dir) or die "Can't open $dir: $!";
 
@@ -205,7 +212,9 @@ foreach my $dir (@date_dirs) {
     close (DIR);
 
     if (!(defined ($found_csv_file))) {
-        print ("  No .csv file found in $dir\n");
+        if ($pp_report_collection_messages) {
+            print ("  No .csv file found in $dir\n");
+        }
         next;
     }
 
@@ -265,9 +274,10 @@ foreach my $dir (@date_dirs) {
 
             if (!(defined ($zip_column_offset))) {
                 print ("Zip column offset not discovered in header\n");
+                exit (1);
             }
 
-            if ($pp_report_header_changes) {
+            if ($pp_report_collection_messages && $pp_report_header_changes) {
                 if ($changed_flag) {
                     print ("  Header change:\n");
                     print ("    'cases_1' offset is $cases_column_offset\n");
@@ -349,10 +359,11 @@ foreach my $dir (@date_dirs) {
                 next;
             }
 
-            print ("  New cases = $new_cases, total now $int_cases\n");
+            if ($pp_report_collection_messages) {
+                print ("  New cases = $new_cases, total now $int_cases\n");
+            }
 
             if ($dir =~ /^(\d{4})-(\d{2})-(\d{2})/) {
-    
                 my $start_dt = DateTime->new(
                     year       => $1,
                     month      => $2,
@@ -361,10 +372,8 @@ foreach my $dir (@date_dirs) {
 
                 for (my $nc = 0; $nc < $new_cases; $nc++) {
                     my %hash;
-
-                    $hash{'start dt'} = $start_dt;
-
-                    my $end_dt;
+                    $hash{'serial'} = $case_serial_number++;
+                    $hash{'begin_dt'} = $start_dt;
 
                     #
                     # Return a value between 1 and 100 inclusive
@@ -377,78 +386,135 @@ foreach my $dir (@date_dirs) {
                         my $sickness_dur = DateTime::Duration->new (
                             days        => 3);
 
-                        $end_dt = $start_dt->add_duration ($sickness_dur);
+                        my $end_dt = $start_dt->clone();
+                        $end_dt->add_duration ($sickness_dur);
 
-                        $hash{'ending status'} = 'dead';
-                        $hash{'end dt'} = $end_dt;
+                        $hash{'ending_status'} = 'dead';
+                        $hash{'end_dt'} = $end_dt;
                     }
                     else {
+                        #
+                        # It's cured eventually. Figure out eventually
+                        #
+                        my $span = $duration_max - $duration_min + 1;
+                        my $length_of_sickness_for_this_case = int (rand ($span)) + 1;
+
                         my $sickness_dur = DateTime::Duration->new (
-                            days        => 19);
+                            days        => $length_of_sickness_for_this_case);
 
-                        $end_dt = $start_dt->add_duration ($sickness_dur);
+                        #
+                        # Make the end date
+                        #
+                        my $end_dt = $start_dt->clone();
+                        $end_dt->add_duration ($sickness_dur);
 
-                        $hash{'ending status'} = 'cured';
+                        $hash{'end_dt'} = $end_dt;
+                        $hash{'ending_status'} = 'cured';
                     }
 
-                    $hash{'end dt'} = $end_dt;
+                    if ($pp_report_collection_messages && 1) {
+                        #
+                        # Debug...
+                        #
+                        my $s = $hash{'begin_dt'};
+                        my $e = $hash{'end_dt'};
 
-                    push ($cases_list, \%hash);
+                        my $debug_string = sprintf ("%04d-%02d-%02d to %04d-%02d-%02d",
+                            $s->year(), $s->month(), $s->day(),
+                            $e->year(), $e->month(), $e->day());
+
+                        print ("  Adding case \"$debug_string\"\n");
+                    }
+
+                    push (@cases_list, \%hash);
                 }
             }
 
         }
     }
+
+    close (FILE);
 }
+
+
+
+
+# exit (1);
+
+#
+# Debug...
+#
+my $last_serial;
+foreach my $tc (@cases_list) {
+    my $top_case_start_dt = $tc->{'begin_dt'};
+    my $top_case_stop_dt = $tc->{'end_dt'};
+    $last_serial = $tc->{'serial'};
+
+    if (!(defined ($top_case_start_dt))) {
+        print ("Start is undefined at " . __LINE__ . "\n");
+        exit (1);
+    }
+}
+print ("Last serial = $last_serial\n");
+
 
 #
 # PROCESS CASES
 # =============
 #
+print ("Begin processing cases...\n");
+
 my $running_total_of_dead = 0;
 my $running_total_of_cured = 0;
-my $currently_sick;
+my $currently_sick = 0;
 
 # my @case_keys = sort (keys (%cases));
 my $case_count = @cases_list;
 
-my $sim_start_dt;
-my $sim_end_dt;
+#
+# Get the earliest and latest dates in the list of cases to
+# establish sim run time
+#
+my $temp_hash_ptr = $cases_list[0];
+my $sim_start_dt = $temp_hash_ptr->{'begin_dt'};
 
-my $dir = substr ($cases_list[0], 0, 10);
-if ($dir =~ /^(\d{4})-(\d{2})-(\d{2})/) {
-    $sim_start_dt = DateTime->new(
-        year       => $1,
-        month      => $2,
-        day        => $3
-    );
-}
+$temp_hash_ptr = $cases_list[$case_count - 1];
+my $sim_end_dt = $temp_hash_ptr->{'begin_dt'};
 
-$dir = substr ($cases_list[$case_keys_count - 1], 0, 10);
-if ($dir =~ /^(\d{4})-(\d{2})-(\d{2})/) {
-    $sim_end_dt = DateTime->new(
-        year       => $1,
-        month      => $2,
-        day        => $3
-    );
-}
 my $done = 0;
-my $doing_dt = $sim_start_dt;
+my $current_sim_dt = $sim_start_dt->clone();
 my $top_case_stop_dt;
+my $output_line;
+my $do_startup_safty_check = 1;
+
 while (!$done) {
-    my $dir_string = sprintf ("%04d-%02d-%02d", 
-    $doing_dt->year(),
-    $doing_dt->month(),
-    $doing_dt->day());
+    if ($do_startup_safty_check) {
+        if (!(defined ($current_sim_dt))) {
+            print ("It's broken, Jim\n");
+            exit (1);
+        }
+        $do_startup_safty_check = 0;
+    }
+
+    my $yr = $current_sim_dt->year();
+    my $mo = $current_sim_dt->month();
+    my $da = $current_sim_dt->day();
+    my $dir_string = sprintf ("%04d-%02d-%02d", $yr, $mo, $da);
+
+    print ("\n$dir_string...\n");
 
     my $done_with_this_day = 0;
     my @new_cases_list;
 
+    my $count_for_debug = 0;
+    my $string_for_debug;
     while (!$done_with_this_day) {
+        $count_for_debug++;
+
         #
         # Make a default output line
         #
-        my $output_line = sprintf ("%s,%d,%d,%d",
+        $output_line = sprintf ("%s,%d,%d,%d",
             $dir_string, $running_total_of_cured, $currently_sick,
             $running_total_of_dead);
 
@@ -457,50 +523,82 @@ while (!$done) {
         #
         my $top_case_ptr = shift (@cases_list);
 
+        my $top_case_start_dt = $top_case_ptr->{'begin_dt'};
+        my $top_case_stop_dt = $top_case_ptr->{'end_dt'};
+        my $serial = $top_case_ptr->{'serial'};
+
+        if ($serial == $last_serial) {
+            $done_with_this_day = 1;
+        }
+
+        if (!(defined ($top_case_start_dt))) {
+            print ("Start is undefined\n");
+            exit (1);
+        }
+        if (!(defined ($top_case_stop_dt))) {
+            print ("Stop is undefined\n");
+            exit (1);
+        }
+
+        if (1) {
+            #
+            # Debug
+            #
+            my $debug_string = sprintf ("%04d-%02d-%02d to %04d-%02d-%02d",
+                $top_case_start_dt->year(), $top_case_start_dt->month(), $top_case_start_dt->day(),
+                $top_case_stop_dt->year(), $top_case_stop_dt->month(), $top_case_stop_dt->day());
+            print ("\n  Case $serial: $debug_string\n");
+        }
+
         #
         # Is it processable?
         #
-        my $top_case_start_dt = $top_case_ptr->{'start dt'};
-        my $top_case_stop_dt = $top_case_ptr->{'stop dt'};
-        if ($doing_dt < $top_case_start_dt) {
+        my $begin_cmp_result = DateTime->compare ($current_sim_dt, $top_case_start_dt);
+        my $end_cmp_result = DateTime->compare ($current_sim_dt, $top_case_stop_dt);
+        if (0) {
+            print ("    \$begin_cmp_result = $begin_cmp_result\n");
+            print ("    \$end_cmp_result = $end_cmp_result\n");
+        }
+        
+        #     print ("  Top case
+        if ($begin_cmp_result == -1) {
             #
-            # No, case can not be processed yet
+            # No, top case can not be processed yet
             # Put it in the new list. Use the default output line. Declare day is done
             #
             push (@new_cases_list, $top_case_ptr);
             $done_with_this_day = 1;
-            goto end_of_day;
+            $string_for_debug = 'not processed';
         }
-        elsif ($doing_dt == $top_case_start_dt) {
+        elsif ($begin_cmp_result == 0) {
             #
             # Start case
             # Put it in the new list. Make a new output line
             #
             push (@new_cases_list, $top_case_ptr);
 
-            $top_case_stop_dt = $top_case_ptr->{'stop dt'};
             $currently_sick++;
 
             $output_line = sprintf ("%s,%d,%d,%d", $dir_string, $running_total_of_cured, $currently_sick,
                 $running_total_of_dead);
 
-            goto end_of_day;
+            $string_for_debug = 'new';
         }
-        elsif ($doing_dt < $top_case_stop_dt) {
+        elsif ($end_cmp_result == -1) {
             #
             # In the middle of this case
             # Put it in the new list. Use the default output line
             #
             push (@new_cases_list, $top_case_ptr);
-            goto end_of_day;
+
+            $string_for_debug = 'ongoing';
         }
-        elsif ($doing_dt == $top_case_stop_dt) {
+        elsif ($end_cmp_result == 0) {
             #
             # Ending a case
             # Do NOT put it in the new list
             #
-            my $end_status = $top_case_ptr->{'ending status'};
-            print (">> $p winds up $end_status\n");
+            my $end_status = $top_case_ptr->{'ending_status'};
             if ($end_status eq 'dead') {
                 $running_total_of_dead++;
             }
@@ -511,20 +609,28 @@ while (!$done) {
             $output_line = sprintf ("%s,%d,%d,%d", $dir_string, $running_total_of_cured, $currently_sick,
                 $running_total_of_dead);
 
-            goto end_of_day;
+            $string_for_debug = 'ending';
         }
         else {
             print ("No clue how this happened\n");
             exit (1);
         }
 
-end_of_day:
-        print ("$output_line\n");
+        # print ("    \$count_for_debug = $count_for_debug  $string_for_debug\n");
+        print ("    $string_for_debug\n");
+    }
+    
+    my $cnt = @new_cases_list;
+    print ("  New cases list has $cnt cases\n");
 
-        if ($done_with_this_day) {
-            push (@new_cases_list, @cases_list);
-            @cases_list = @new_cases_list;
-        }
+    push (@new_cases_list, @cases_list);
+    @cases_list = @new_cases_list;
+
+    print ("  $output_line\n");
+
+    $current_sim_dt->add_duration ($dur);
+    if ($current_sim_dt > $sim_end_dt) {
+        $done = 1;
     }
 }
 
