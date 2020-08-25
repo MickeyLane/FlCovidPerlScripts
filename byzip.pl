@@ -158,15 +158,14 @@ my $reference_header_string;
 my @reference_header_list;
 my $cases_column_offset;
 my $zip_column_offset;
-my %cases;
-my $last_case_stored;
+my @cases_list;
 my $previous_cases = 0;
 
 #
 # COLLECT DATA
 # ============
 #
-# For each directory specified in dirs.txt, find a .csv file and make cases in %cases
+# For each directory specified in dirs.txt, find a .csv file and make a case (or cases) in @cases_list
 #
 print ("Searching for .csv files...\n");
 my @suffixlist = qw (.csv);
@@ -394,9 +393,7 @@ foreach my $dir (@date_dirs) {
 
                     $hash{'end dt'} = $end_dt;
 
-                    my $new_case_key = sprintf ("%s-%02d", $dir, $nc);
-                    $cases{$new_case_key} = \%hash;
-                    $last_case_stored = $new_case_key;
+                    push ($cases_list, \%hash);
                 }
             }
 
@@ -408,11 +405,127 @@ foreach my $dir (@date_dirs) {
 # PROCESS CASES
 # =============
 #
-my @case_keys = sort (keys (%cases));
-foreach my $p (@case_keys) {
-    my $hash_ptr = $cases{$p};
-    my $end_status = $hash_ptr->{'ending status'};
-    print (">> $p winds up $end_status\n");
+my $running_total_of_dead = 0;
+my $running_total_of_cured = 0;
+my $currently_sick;
+
+# my @case_keys = sort (keys (%cases));
+my $case_count = @cases_list;
+
+my $sim_start_dt;
+my $sim_end_dt;
+
+my $dir = substr ($cases_list[0], 0, 10);
+if ($dir =~ /^(\d{4})-(\d{2})-(\d{2})/) {
+    $sim_start_dt = DateTime->new(
+        year       => $1,
+        month      => $2,
+        day        => $3
+    );
+}
+
+$dir = substr ($cases_list[$case_keys_count - 1], 0, 10);
+if ($dir =~ /^(\d{4})-(\d{2})-(\d{2})/) {
+    $sim_end_dt = DateTime->new(
+        year       => $1,
+        month      => $2,
+        day        => $3
+    );
+}
+my $done = 0;
+my $doing_dt = $sim_start_dt;
+my $top_case_stop_dt;
+while (!$done) {
+    my $dir_string = sprintf ("%04d-%02d-%02d", 
+    $doing_dt->year(),
+    $doing_dt->month(),
+    $doing_dt->day());
+
+    my $done_with_this_day = 0;
+    my @new_cases_list;
+
+    while (!$done_with_this_day) {
+        #
+        # Make a default output line
+        #
+        my $output_line = sprintf ("%s,%d,%d,%d",
+            $dir_string, $running_total_of_cured, $currently_sick,
+            $running_total_of_dead);
+
+        #
+        # Get the next case
+        #
+        my $top_case_ptr = shift (@cases_list);
+
+        #
+        # Is it processable?
+        #
+        my $top_case_start_dt = $top_case_ptr->{'start dt'};
+        my $top_case_stop_dt = $top_case_ptr->{'stop dt'};
+        if ($doing_dt < $top_case_start_dt) {
+            #
+            # No, case can not be processed yet
+            # Put it in the new list. Use the default output line. Declare day is done
+            #
+            push (@new_cases_list, $top_case_ptr);
+            $done_with_this_day = 1;
+            goto end_of_day;
+        }
+        elsif ($doing_dt == $top_case_start_dt) {
+            #
+            # Start case
+            # Put it in the new list. Make a new output line
+            #
+            push (@new_cases_list, $top_case_ptr);
+
+            $top_case_stop_dt = $top_case_ptr->{'stop dt'};
+            $currently_sick++;
+
+            $output_line = sprintf ("%s,%d,%d,%d", $dir_string, $running_total_of_cured, $currently_sick,
+                $running_total_of_dead);
+
+            goto end_of_day;
+        }
+        elsif ($doing_dt < $top_case_stop_dt) {
+            #
+            # In the middle of this case
+            # Put it in the new list. Use the default output line
+            #
+            push (@new_cases_list, $top_case_ptr);
+            goto end_of_day;
+        }
+        elsif ($doing_dt == $top_case_stop_dt) {
+            #
+            # Ending a case
+            # Do NOT put it in the new list
+            #
+            my $end_status = $top_case_ptr->{'ending status'};
+            print (">> $p winds up $end_status\n");
+            if ($end_status eq 'dead') {
+                $running_total_of_dead++;
+            }
+            elsif ($end_status eq 'cured') {
+                $running_total_of_cured++;
+            }
+
+            $output_line = sprintf ("%s,%d,%d,%d", $dir_string, $running_total_of_cured, $currently_sick,
+                $running_total_of_dead);
+
+            goto end_of_day;
+        }
+        else {
+            print ("No clue how this happened\n");
+            exit (1);
+        }
+
+end_of_day:
+        print ("$output_line\n");
+
+        if ($done_with_this_day) {
+            push (@new_cases_list, @cases_list);
+            @cases_list = @new_cases_list;
+        }
+    }
 }
 
 #
