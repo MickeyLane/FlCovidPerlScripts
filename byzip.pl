@@ -31,12 +31,8 @@ package main;
 #
 # Edit the following as needed. If you are using Linux, ignore '_windows' and vice versa
 #
-our $fq_root_dir_for_windows = 'D:/Covid/ByZip';
-our $fq_root_dir_for_linux = '/home/mickey/Covid/ByZip';
-# our $output_file_name = 'sliced.csv';
-# our $output_file_column_header_file_name = 'output_file_column_names.txt';
-# our $fq_cld_root_dir_for_windows = 'D:/Covid/CaseLineData';
-
+my $fq_root_dir_for_windows = 'D:/Covid/ByZip';
+my $fq_root_dir_for_linux = '/home/mickey/Covid/ByZip';
 my $pp_report_header_changes = 0;
 my $pp_report_collection_messages = 0;
 my $pp_create_missing_directories = 0;
@@ -72,8 +68,8 @@ $CWD = $dir;
 $cwd = Cwd::cwd();
 print ("Current working directory is $cwd\n");
 
-my $find_dirs_flag = 1;
-my $use_hard_coded_flag = 0;
+my  $pp_output_file = "$dir/byzip-output.cvs";
+
 my $zip;
 my $mortality = 3;
 my $duration_min = 9;
@@ -107,55 +103,31 @@ print ("Duration_max = $duration_max\n");
 my @date_dirs;
 my @csv_files;
 
-if ($find_dirs_flag) {
-    if ($pp_create_missing_directories) {
-        #
-        # Make missing date directories
-        #
-        my $not_done = 1;
-        while ($not_done) {
-            $not_done = make_new_dirs ($dir);
-        }
-    }
-
+if ($pp_create_missing_directories) {
     #
-    # Examine $dir and make dirs.txt
+    # Make missing date directories
     #
-    opendir (DIR, $dir) or die "Can't open $dir: $!";
-    while (my $fn = readdir (DIR)) {
-        if ($fn =~ /^[.]/) {
-            next;
-        }
-        my $fq_fn = "$dir/$fn";
-        if (-d $fq_fn) {
-            if ($fn =~ /(\d{4})-(\d{2})-(\d{2})/) {
-                my $date = "$1-$2-$3";
-                push (@date_dirs, "$date");
-            }
-        }
+    my $not_done = 1;
+    while ($not_done) {
+        $not_done = make_new_dirs ($dir);
     }
-
-    print ("Making a new dirs.txt file...\n");
-    open (FILE, ">", 'dirs.txt') or die "Can't open dirs.txt: $!";
-    foreach my $w (@date_dirs) {
-        print (FILE "$w\n");
-        # print ("$w\n");
-    }
-    close (FILE);
 }
-elsif ($use_hard_coded_flag) {
-    push (@date_dirs, "$cwd/2020-07-16");
-}
-else {
-    #
-    # Read existing dirs.txt
-    #
-    open (FILE, "<", 'dirs.txt') or die "Can't open dirs.txt: $!";
-    while (my $record = <FILE>) {
-        $record =~ s/[\r\n]+//;  # remove <cr><lf>
-        push (@date_dirs, "$cwd/$record");
+
+#
+# Examine $dir
+#
+opendir (DIR, $dir) or die "Can't open $dir: $!";
+while (my $fn = readdir (DIR)) {
+    if ($fn =~ /^[.]/) {
+        next;
     }
-    close (FILE);
+    my $fq_fn = "$dir/$fn";
+    if (-d $fq_fn) {
+        if ($fn =~ /(\d{4})-(\d{2})-(\d{2})/) {
+            my $date = "$1-$2-$3";
+            push (@date_dirs, "$date");
+        }
+    }
 }
 
 my $reference_header_string;
@@ -464,6 +436,8 @@ print ("Last serial = $last_serial\n");
 #
 print ("Begin processing cases...\n");
 
+open (FILE, ">", $pp_output_file) or die "Can't open $pp_output_file: $!";
+
 my $running_total_of_dead = 0;
 my $running_total_of_cured = 0;
 my $currently_sick = 0;
@@ -626,13 +600,15 @@ while (!$done) {
     push (@new_cases_list, @cases_list);
     @cases_list = @new_cases_list;
 
-    print ("  $output_line\n");
+    print (FILE "$output_line\n");
 
     $current_sim_dt->add_duration ($dur);
     if ($current_sim_dt > $sim_end_dt) {
         $done = 1;
     }
 }
+
+close (FILE);
 
 #
 #
