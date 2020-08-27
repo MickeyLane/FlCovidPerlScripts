@@ -794,144 +794,46 @@ sub make_plot {
 
     my $len = @$csv_ptr;
     for (my $i = 0; $i < $len; $i++) {
-        my $s = $csv_array[$i];
+        my @columns = split (',', $csv_array[$i]);
 
         #
-        # Column header
+        # Column header is [0]
         #
-        my $comma = index ($s, ',');
-        $header_array[$i] = substr ($s, 0, $comma);
-        my $temp = substr ($s, $comma + 1);
-        $s = $temp;
+        my $src = 0;
+        $header_array[$i] = $columns[$src++];
 
-        #
-        # Cured 1
-        #
-        $comma = index ($s, ',');
-        $cured_1_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
-        #
-        # Sick 1
-        #
-        $comma = index ($s, ',');
-        $sick_1_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
+        $cured_1_array[$i] = $columns[$src++];
+        $sick_1_array[$i] = $columns[$src++];
+        $sick_alt_1_array[$i] = $columns[$src++];
+        $dead_1_array[$i] = $columns[$src++];
         
-        #
-        # Skip the zero
-        #
-        $comma = index ($s, ',');
-        $sick_alt_1_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
-        #
-        # Dead 1
-        #
-        $comma = index ($s, ',');
-        $dead_1_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
-        #
-        # Cured 2
-        #
-        $comma = index ($s, ',');
-        $cured_2_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
-        #
-        # Sick 2
-        #
-        $comma = index ($s, ',');
-        $sick_2_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
+        $cured_2_array[$i] = $columns[$src++];
+        $sick_2_array[$i] = $columns[$src++];
+        $sick_alt_2_array[$i] = $columns[$src++];
+        $dead_2_array[$i] = $columns[$src++];
         
-        #
-        # Alternate sick 2
-        #
-        $comma = index ($s, ',');
-        $sick_alt_2_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
-        #
-        # Dead 2
-        #
-        $comma = index ($s, ',');
-        $dead_2_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
-        #
-        # Cured 3
-        #
-        $comma = index ($s, ',');
-        $cured_3_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
-        #
-        # Sick 3
-        #
-        $comma = index ($s, ',');
-        $sick_3_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
-        #
-        # Alternate sick 3
-        #
-        $comma = index ($s, ',');
-        $sick_alt_3_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
-        #
-        # Dead 3
-        #
-        $comma = index ($s, ',');
-        $dead_3_array[$i] = substr ($s, 0, $comma);
-        $temp = substr ($s, $comma + 1);
-        $s = $temp;
-
+        $cured_3_array[$i] = $columns[$src++];
+        $sick_3_array[$i] = $columns[$src++];
+        $sick_alt_3_array[$i] = $columns[$src++];
+        $dead_3_array[$i] = $columns[$src++];
     }
 
-    my @colors;
     push (@data, \@header_array);
-    # push (@colors, 'black');
 
     push (@data, \@cured_1_array);
-    # push (@colors, 'green');
-
     push (@data, \@sick_1_array);
-    # push (@colors, 'orange');
-
+    push (@data, \@sick_alt_1_array);
     push (@data, \@dead_1_array);
-    # push (@colors, 'red');
 
     push (@data, \@cured_2_array);
-    # push (@colors, 'green');
-
     push (@data, \@sick_2_array);
-    # push (@colors, 'orange');
-
+    push (@data, \@sick_alt_2_array);
     push (@data, \@dead_2_array);
-    # push (@colors, 'red');
 
     push (@data, \@cured_3_array);
-    # push (@colors, 'green');
-
     push (@data, \@sick_3_array);
-    # push (@colors, 'orange');
-
+    push (@data, \@sick_alt_3_array);
     push (@data, \@dead_3_array);
-    # push (@colors, 'red');
 
     my $graph_file = "$dir/graph.gif";
 
@@ -941,7 +843,7 @@ sub make_plot {
             y_label 	=> 'Cases', 
             title  		=> $title, 
             #cumulate 	=> 1, 
-            dclrs 		=> [ 'green', 'orange', 'red' ], 
+            dclrs 		=> [ 'green', 'orange', 'blue', 'red' ], 
             borderclrs 	=> [ qw(black black), qw(black black) ], 
             bar_spacing => 4, 
             transparent => 1,
