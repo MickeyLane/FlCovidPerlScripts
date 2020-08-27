@@ -7,6 +7,12 @@ use strict;
 # This software is provided as is, where is, etc with no guarantee that it is
 # fit for any purpose whatsoever. Use at your own risk. Mileage may vary.
 #
+# You are free to do whatever you want with it. It would be nice if you gave credit
+# to the author (Mickey Lane, chiliwhiz@gmail.com) if the situation warrants.
+#
+# This is a simulator. That means that while some of the input data may be real (or
+# as real as the dept of health has decided to make it), all of the output is speculation.
+# 
 
 use File::Find;           
 use File::chdir;
@@ -16,9 +22,12 @@ use List::Util qw (shuffle);
 use POSIX;
 use File::Copy;
 use DateTime;
-# use Spreadsheet::Read qw(ReadData);
+use GD::Graph::points;
+use GD::Graph::lines;
 
 use lib '.';
+use byzip_a;
+use byzip_b;
 
 package main;
 
@@ -34,11 +43,11 @@ package main;
 my $fq_root_dir_for_windows = 'D:/Covid/ByZip';
 my $fq_root_dir_for_linux = '/home/mickey/Covid/ByZip';
 my $pp_create_missing_directories = 0;
-my $pp_report_generation_messages = 1;
+our $pp_report_generation_messages = 0;
 my $pp_report_sim_messages = 0;
 my $pp_report_adding_case = 0;
-my $pp_dont_do_sims = 1;
-my $pp_report_header_changes = 0;
+my $pp_dont_do_sims = 0;
+our $pp_report_header_changes = 0;
 
 #
 # This stuff is for the name_new_dirs routine
@@ -156,21 +165,31 @@ while (my $fn = readdir (DIR)) {
     }
 }
 
-my $reference_header_string;
-my @reference_header_list;
-my $cases_column_offset;
-my $zip_column_offset;
 my @cases_list;
-my $previous_cases = 0;
+my %previous_cases_hash;
 my $case_serial_number = 1;
+
+#
+# Make a list of zips to test. Could be only one
+#
+my @zip_list;
+my $i = index ($zip_string, ',');
+if ($i != -1) {
+    @zip_list = split (',', $zip_string);
+}
+else {
+    push (@zip_list, $zip_string);
+}
 
 #
 # COLLECT DATA
 # ============
 #
-# For each directory specified in dirs.txt, find a .csv file and make a case (or cases) in @cases_list
+print ("Searching .csv files and collecting data...\n");
+
 #
-print ("Searching for .csv files...\n");
+# For each directory specified in dirs.txt, find a .csv file and save records that might be useful
+#
 my @suffixlist = qw (.csv);
 foreach my $dir (@date_dirs) {
     if ($pp_report_generation_messages) {
@@ -216,292 +235,143 @@ foreach my $dir (@date_dirs) {
         next;
     }
 
+    my ($cases_column_offset, $zip_column_offset, $ptr) = byzip_a::get_records ($found_csv_file, \@zip_list);
+    my @possibly_useful_records = @$ptr;
+
     #
-    # Make a list of zips to test. Could be only one
+    # Process possibly useful records, make list of useful records
     #
-    my @zip_list;
-    my $i = index ($zip_string, ',');
-    if ($i != -1) {
-        my @zip_list = split (',', $zip_string);
+    $ptr = byzip_b::validate_records (\@possibly_useful_records, $cases_column_offset,$zip_column_offset, \@zip_list);
+    my @useful_records = @$ptr;
+
+    #
+    #
+    #
+    if ($pp_report_generation_messages) {
+        print ("Process useful records...\n");
     }
-    else {
-        push (@zip_list, $zip_string);
-    }
 
-    my $record_number = 0;
-    my $header_string;
-    my @header_list;
+    foreach my $record (@useful_records) {
+        my @list = split (',', $record);
 
-    open (FILE, "<", $found_csv_file) or die "Can't open $found_csv_file: $!";
-    while (my $record = <FILE>) {
-        $record_number++;
-        chomp ($record);
+        #
+        # Get the cases value
+        #
+        my $cases = $list[$cases_column_offset];
+        my $zip_from_this_record = $list[$zip_column_offset];
 
-        if ($record_number == 1) {
-            my $changed_flag = 0;
-            my $initial_flag = 0;
+        my $int_cases = int ($cases);
+        # if ($negative_value_flag) {
+        #     $int_cases = $int_cases * -1;
+        # }
 
-            #
-            # Remove BOM if any
-            #
-            if ($record =~ /^\xef\xbb\xbf/) {
-                $header_string = substr ($record, 3);
-            }
-            elsif ($record =~ /^\xfe\xff\x00\x30\x00\x20\x00\x48\x00\x45\x00\x41\x00\x44/) {
-                print ("  File is Unicode\n");
-                die;
-            }
-            else {
-                $header_string = $record;
-            }
-
-            if (!(defined ($reference_header_string))) {
-                $reference_header_string = $header_string;
-                @reference_header_list = split (',', $header_string);
-                $initial_flag = 1;
-            }
-
-            if ($header_string ne $reference_header_string) {
-                $reference_header_string = $header_string;
-                @reference_header_list = split (',', $header_string);
-                undef ($zip_column_offset);
-                undef ($cases_column_offset);
-                $changed_flag = 1;
-            }
-
-            my $len = @reference_header_list;
-            for (my $j = 0; $j < $len; $j++) {
-                my $h = lc $reference_header_list[$j];
-                if ($h eq 'cases_1') {
-                    $cases_column_offset = $j;
-                }
-                elsif ($h eq 'zip') {
-                    $zip_column_offset = $j;
-                }
-                elsif ($h eq 'zipx') {
-                    $zip_column_offset = $j;
-                }
-            }
-
-            if (!(defined ($zip_column_offset))) {
-                print ("Zip column offset not discovered in header\n");
-                exit (1);
-            }
-
-            if ($pp_report_generation_messages && $pp_report_header_changes) {
-                if ($changed_flag) {
-                    print ("  Header change:\n");
-                    print ("    'cases_1' offset is $cases_column_offset\n");
-                    print ("    'zip' offset is $zip_column_offset\n");
-                }
-                elsif ($initial_flag) {
-                    print ("  Initial header:\n");
-                    print ("    'cases_1' offset is $cases_column_offset\n");
-                    print ("    'zip' offset is $zip_column_offset\n");
-                }
-            }
-
+        if ($int_cases == 0) {
             next;
         }
         
         #
-        # Search for any instance of any of the zipcode string characters
-        # Could be part of some totally unrelated number
+        # Determine new cases value
         #
-        my $found_zip_like_string = 0;
-        foreach my $zip_to_test (@zip_list) {
-            my $j = index ($record, $zip_to_test);
-            if ($j != -1) {
-                $found_zip_like_string = 1;
-                last;
-            }
+        my $new_cases = 0;
+        my $previous_cases = 0;
+        if (exists ($previous_cases_hash{$zip_from_this_record})) {
+            $previous_cases = $previous_cases_hash{$zip_from_this_record};
         }
 
-        if ($found_zip_like_string != 0) {
+        if ($previous_cases == 0) {
             #
-            # Delete fields wrapped in double quotes. They could contain commas
+            # First time a record has been found with 5 or more cases
+            # so initialize $previous_cases
             #
-            my $delete_done = 0;
-            while (!$delete_done) {
-                my $left_double_quote = index ($record, '"');
-                if ($left_double_quote != -1) {
-                    my $right_double_quote = index ($record, '"', $left_double_quote + 1);
-                    my $left_half = substr ($record, 0, $left_double_quote);
-                    my $right_half = substr ($record, $right_double_quote + 1);
-                    $record = $left_half . $right_half;
+            $new_cases = $int_cases;
+            $previous_cases = $int_cases;
+        }
+        elsif ($previous_cases != $int_cases) {
+            #
+            # If cases from this record is not the same as previous cases, new
+            # case records need to be generated
+            #
+            $new_cases = $int_cases - $previous_cases;
+            $previous_cases = $int_cases;
+        }
+
+        $previous_cases_hash{$zip_from_this_record} = $previous_cases;
+
+        #
+        # Negative number of new cases. Someone at the health dept. twiddled the data.
+        # Search previous cases for ones from this zip and delete them until the new
+        # cases value is zero
+        #
+        if ($new_cases < 0) {
+            my @cases_to_keep;
+            while ($new_cases != 0) {
+                my $cases_count = @cases_list;
+                if ($cases_count == 0) {
+                    print ("While attempting to delete cases due to a negative new case count, ran out of cases\n");
+                    exit (1);
+                }
+                my $hash_ptr = pop (@cases_list);
+                my $from_zip = $hash_ptr->{'from_zip'};
+                if ($zip_from_this_record != $from_zip) {
+                    push (@cases_to_keep, $hash_ptr);
                 }
                 else {
-                    $delete_done = 1;
-                }
-            }
-
-            my @list = split (',', $record);
-
-            my $this_zip = $list[$zip_column_offset];
-            print ("  \$this_zip = $this_zip\n");
-
-            my $zip_from_this_record;
-            my $process_this_record_flag = 0;
-            if ($this_zip =~ /(\d{5})/) {
-                $zip_from_this_record = $1;
-                foreach my $zip_to_test (@zip_list) {
-                    if ($zip_to_test == $zip_from_this_record) {
-                        $process_this_record_flag = 1;
-                        last;
-                    }
-                }
-            }
-            else {
-                print ("Unable to locate 5 consecutive digits in what is supposed to be the zip code column\n");
-                exit (1);
-            }
-
-            if (!$process_this_record_flag) {
-                next;
-            }
-
-            #
-            # This record will be processed. The zip code is in $zip_from_this_record
-            #
-            # Get the cases value
-            #
-            my $cases = $list[$cases_column_offset];
-            print ("  \$cases = $cases\n");
-
-            if (length ($cases) eq 0) {
-                print ("  Null cases column at record $record_number\n");
-                print ("     Cases column offset = $cases_column_offset\n");
-                exit (1);
-            }
-
-            #
-            # Search for '0' or the '<5' value and ignore this record if found
-            #
-            if ($cases eq '0') {
-                next;
-            }
-            my $first_cases_character = substr ($cases, 0, 1);
-            if ($first_cases_character eq '<') {
-                next;
-            }
-
-            #
-            # Test for a negative value string. Probably not found anywhere
-            #
-            my $negative_value_flag = 0;
-            if ($first_cases_character eq '-') {
-                $negative_value_flag = 1;
-                my $new_cases_string = substr ($cases, 1);
-                $cases = $new_cases_string;
-                print ("Negative value found in cases column\n");
-            }
-
-            my $int_cases = int ($cases);
-            if ($negative_value_flag) {
-                $int_cases = $int_cases * -1;
-            }
-
-            if ($int_cases == 0) {
-                next;
-            }
-            
-            #
-            # Determine new cases value
-            #
-            my $new_cases = 0;
-            if ($previous_cases == 0) {
-                #
-                # First time a record has been found with 5 or more cases
-                # so initialize $previous_cases
-                #
-                $new_cases = $int_cases;
-                $previous_cases = $int_cases;
-            }
-            elsif ($previous_cases != $int_cases) {
-                #
-                # If cases from this record is not the same as previous cases, new
-                # case records need to be generated
-                #
-                $new_cases = $int_cases - $previous_cases;
-                $previous_cases = $int_cases;
-            }
-
-            #
-            # Negative number of new cases. Someone at the health dept. twiddled the data.
-            # Search previous cases for ones from this zip and delete them until the new
-            # cases value is zero
-            #
-            if ($new_cases < 0) {
-                my @cases_to_keep;
-                while ($new_cases != 0) {
-                    my $cases_count = @cases_list;
-                    if ($cases_count == 0) {
-                        print ("While attempting to delete cases due to a negative new case count, ran out of cases\n");
-                        exit (1);
-                    }
-                    my $hash_ptr = pop (@cases_list);
-                    my $from_zip = $hash_ptr->{'from_zip'};
-                    if ($zip_from_this_record != $from_zip) {
-                        push (@cases_to_keep, $hash_ptr);
-                    }
-                    else {
-                        my $serial = $hash_ptr->{'serial'};
+                    my $serial = $hash_ptr->{'serial'};
+                    if ($pp_report_generation_messages) {
                         print ("  Deleting case with serial = $serial\n");
-                        $new_cases++;
                     }
-                }
-
-                push (@cases_list, @cases_to_keep);
-
-                next;
-            }
-            
-            if ($new_cases == 0) {
-                next;
-            }
-
-            #
-            # Generate new cases
-            # ------------------
-            #
-            if ($pp_report_generation_messages) {
-                print ("  New cases = $new_cases, total now $int_cases\n");
-            }
-
-            if ($dir =~ /^(\d{4})-(\d{2})-(\d{2})/) {
-                my $begin_dt = DateTime->new(
-                    year       => $1,
-                    month      => $2,
-                    day        => $3
-                );
-
-                for (my $nc = 0; $nc < $new_cases; $nc++) {
-                    my %hash;
-                    $hash{'serial'} = $case_serial_number++;
-                    $hash{'begin_dt'} = $begin_dt;
-                    $hash{'from_zip'} = $zip_from_this_record;
-
-                    # my $random_non_white = int (rand (1000) + 1);
-                    # if ($random_non_white <= $non_white_x_10) {
-                    #     $hash{'non_white'} = 1;
-                    # }
-                    # else {
-                    #     $hash{'non_white'} = 0;
-                    # }
-
-                    #
-                    # Add random values to case
-                    #
-                    add_random (\%hash);
-
-                    push (@cases_list, \%hash);
+                    $new_cases++;
                 }
             }
 
+            push (@cases_list, @cases_to_keep);
+
+            next;
+        }
+        
+        if ($new_cases == 0) {
+            next;
+        }
+
+        #
+        # Generate new cases
+        # ------------------
+        #
+        if ($pp_report_generation_messages) {
+            print ("  New cases for $zip_from_this_record = $new_cases, total now $int_cases\n");
+        }
+
+        if ($dir =~ /^(\d{4})-(\d{2})-(\d{2})/) {
+            my $begin_dt = DateTime->new(
+                year       => $1,
+                month      => $2,
+                day        => $3
+            );
+
+            for (my $nc = 0; $nc < $new_cases; $nc++) {
+                my %hash;
+                $hash{'serial'} = $case_serial_number++;
+                $hash{'begin_dt'} = $begin_dt;
+                $hash{'from_zip'} = $zip_from_this_record;
+
+                # my $random_non_white = int (rand (1000) + 1);
+                # if ($random_non_white <= $non_white_x_10) {
+                #     $hash{'non_white'} = 1;
+                # }
+                # else {
+                #     $hash{'non_white'} = 0;
+                # }
+
+                #
+                # Add random values to case
+                #
+                add_random (\%hash);
+
+                push (@cases_list, \%hash);
+            }
         }
     }
 
-    close (FILE);
 }
 
 #
@@ -573,6 +443,9 @@ foreach my $r (@output_csv) {
 }
 
 close (FILE);
+
+make_plot ($dir, \@output_csv, $zip_string);
+
 
 #
 #
@@ -697,8 +570,11 @@ sub process {
             #
             # Make a default output line
             #
-            $output_line = sprintf ("%s,%d,%d,%d",
-                $dir_string, $running_total_of_cured, $currently_sick,
+            $output_line = sprintf ("%s,%d,%d,%d,%d",
+                $dir_string,
+                $running_total_of_cured,
+                $currently_sick,
+                0,
                 $running_total_of_dead);
 
             #
@@ -762,8 +638,12 @@ sub process {
 
                 $currently_sick++;
 
-                $output_line = sprintf ("%s,%d,%d,%d", $dir_string, $running_total_of_cured, $currently_sick,
-                    $running_total_of_dead);
+                $output_line = sprintf ("%s,%d,%d,%d,%d",
+                $dir_string,
+                $running_total_of_cured,
+                $currently_sick,
+                0,
+                $running_total_of_dead);
 
                 $string_for_debug = 'new';
             }
@@ -791,7 +671,11 @@ sub process {
 
                 $currently_sick--;
 
-                $output_line = sprintf ("%s,%d,%d,%d", $dir_string, $running_total_of_cured, $currently_sick,
+                $output_line = sprintf ("%s,%d,%d,%d,%d",
+                    $dir_string,
+                    $running_total_of_cured,
+                    $currently_sick,
+                    0,
                     $running_total_of_dead);
 
                 $string_for_debug = 'ending';
@@ -883,4 +767,192 @@ sub add_random {
     }
 }
 
-1;  # required
+sub make_plot {
+    my $dir = shift;
+    my $csv_ptr = shift;
+    my $title = shift;
+
+    my @data;
+    
+    my @csv_array = @$csv_ptr;
+
+    my @new_array;
+
+    my @header_array;
+    my @cured_1_array;
+    my @cured_2_array;
+    my @cured_3_array;
+    my @sick_1_array;
+    my @sick_alt_1_array;
+    my @sick_2_array;
+    my @sick_alt_2_array;
+    my @sick_3_array;
+    my @sick_alt_3_array;
+    my @dead_1_array;
+    my @dead_2_array;
+    my @dead_3_array;
+
+    my $len = @$csv_ptr;
+    for (my $i = 0; $i < $len; $i++) {
+        my $s = $csv_array[$i];
+
+        #
+        # Column header
+        #
+        my $comma = index ($s, ',');
+        $header_array[$i] = substr ($s, 0, $comma);
+        my $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Cured 1
+        #
+        $comma = index ($s, ',');
+        $cured_1_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Sick 1
+        #
+        $comma = index ($s, ',');
+        $sick_1_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+        
+        #
+        # Skip the zero
+        #
+        $comma = index ($s, ',');
+        $sick_alt_1_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Dead 1
+        #
+        $comma = index ($s, ',');
+        $dead_1_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Cured 2
+        #
+        $comma = index ($s, ',');
+        $cured_2_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Sick 2
+        #
+        $comma = index ($s, ',');
+        $sick_2_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+        
+        #
+        # Alternate sick 2
+        #
+        $comma = index ($s, ',');
+        $sick_alt_2_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Dead 2
+        #
+        $comma = index ($s, ',');
+        $dead_2_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Cured 3
+        #
+        $comma = index ($s, ',');
+        $cured_3_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Sick 3
+        #
+        $comma = index ($s, ',');
+        $sick_3_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Alternate sick 3
+        #
+        $comma = index ($s, ',');
+        $sick_alt_3_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+        #
+        # Dead 3
+        #
+        $comma = index ($s, ',');
+        $dead_3_array[$i] = substr ($s, 0, $comma);
+        $temp = substr ($s, $comma + 1);
+        $s = $temp;
+
+    }
+
+    my @colors;
+    push (@data, \@header_array);
+    # push (@colors, 'black');
+
+    push (@data, \@cured_1_array);
+    # push (@colors, 'green');
+
+    push (@data, \@sick_1_array);
+    # push (@colors, 'orange');
+
+    push (@data, \@dead_1_array);
+    # push (@colors, 'red');
+
+    push (@data, \@cured_2_array);
+    # push (@colors, 'green');
+
+    push (@data, \@sick_2_array);
+    # push (@colors, 'orange');
+
+    push (@data, \@dead_2_array);
+    # push (@colors, 'red');
+
+    push (@data, \@cured_3_array);
+    # push (@colors, 'green');
+
+    push (@data, \@sick_3_array);
+    # push (@colors, 'orange');
+
+    push (@data, \@dead_3_array);
+    # push (@colors, 'red');
+
+    my $graph_file = "$dir/graph.gif";
+
+    my $graph = GD::Graph::lines->new (1500, 750);
+    $graph->set( 
+            x_label 	=> 'Dates', 
+            y_label 	=> 'Cases', 
+            title  		=> $title, 
+            #cumulate 	=> 1, 
+            dclrs 		=> [ 'green', 'orange', 'red' ], 
+            borderclrs 	=> [ qw(black black), qw(black black) ], 
+            bar_spacing => 4, 
+            transparent => 1,
+            show_values => 0
+    ); 
+
+    my $gd = $graph->plot(\@data) or die $graph->error; 
+
+    open(IMG, ">","$graph_file") or die $!;
+    binmode IMG;
+    print IMG $gd->gif;
+    close IMG;
+
+}
