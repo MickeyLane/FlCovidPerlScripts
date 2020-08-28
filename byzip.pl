@@ -22,12 +22,13 @@ use List::Util qw (shuffle);
 use POSIX;
 use File::Copy;
 use DateTime;
-use GD::Graph::points;
-use GD::Graph::lines;
+use List::Util qw (max);
 
 use lib '.';
 use byzip_a;
 use byzip_b;
+use byzip_c;
+use byzip_plot;
 
 package main;
 
@@ -40,9 +41,9 @@ package main;
 #
 # Edit the following as needed. If you are using Linux, ignore '_windows' and vice versa
 #
-my $fq_root_dir_for_windows = 'D:/Covid/ByZip';
-my $fq_root_dir_for_linux = '/home/mickey/Covid/ByZip';
-my $pp_create_missing_directories = 0;
+my $fq_root_dir_for_windows = 'D:/Covid_ByZip';
+my $fq_root_dir_for_linux = '/home/mickey/Covid_ByZip';
+my $pp_create_missing_directories = 1;
 our $pp_report_generation_messages = 0;
 my $pp_report_sim_messages = 0;
 my $pp_report_adding_case = 0;
@@ -78,7 +79,7 @@ else {
 }
 $CWD = $dir;
 $cwd = Cwd::cwd();
-print ("Current working directory is $cwd\n");
+# print ("Current working directory is $cwd\n");
 
 my  $pp_output_file = "$dir/byzip-output.csv";
 
@@ -86,13 +87,15 @@ my $zip_string;
 my $mortality = 3.1;
 my $duration_min = 9;
 my $duration_max = 19;
-my $undetected = 1;
+my $untested_positive = 0;
 # my $non_white;
 # my $white;
 my $severity = '40:40:20';
 
 my @date_dirs;
 
+my $untested_positive_switch = 'untested_positive=';
+my $untested_positive_switch_string_len = length ($untested_positive_switch);
 foreach my $switch (@ARGV) {
     my $lc_switch = lc $switch;
     if (index ($lc_switch, 'zip=') != -1) {
@@ -109,9 +112,9 @@ foreach my $switch (@ARGV) {
         my $val = substr ($switch, 13);
         $duration_max = int ($val);
     }
-    elsif (index ($lc_switch, 'undetected=') != -1) {
-        my $val = substr ($switch, 11);
-        $undetected = int ($val);
+    elsif (index ($lc_switch, $untested_positive_switch) != -1) {
+        my $val = substr ($switch, $untested_positive_switch_string_len);
+        $untested_positive = int ($val);
     }
     # elsif (index ($lc_switch, 'non_white=') != -1) {
     #     my $val = substr ($switch, 10);
@@ -123,12 +126,17 @@ foreach my $switch (@ARGV) {
     }
 }
 
+if (!(defined ($zip_string))) {
+    print ("No zip code specified\n");
+    exit (1);
+}
+
 print ("Simulation values:\n");
 print ("  Zip = $zip_string\n");
 print ("  Mortality = $mortality percent\n");
 print ("  Duration_min = $duration_min days\n");
 print ("  Duration_max = $duration_max days\n");
-print ("  Undetected = $undetected for every one detected\n");
+print ("  Untested = add $untested_positive untested positive cases for every one detected\n");
 # print ("  White = $white percent\n");
 # print ("  Non_white = $non_white percent\n");
 # print ("  Severity = $severity disease severity groups: no symptoms, moderate and severe\n");
@@ -235,6 +243,10 @@ foreach my $dir (@date_dirs) {
         next;
     }
 
+    #
+    # Get records reads the .csv file and returns a list of records that _might_ contain
+    # useful information
+    #
     my ($cases_column_offset, $zip_column_offset, $ptr) = byzip_a::get_records ($found_csv_file, \@zip_list);
     my @possibly_useful_records = @$ptr;
 
@@ -353,6 +365,7 @@ foreach my $dir (@date_dirs) {
                 $hash{'serial'} = $case_serial_number++;
                 $hash{'begin_dt'} = $begin_dt;
                 $hash{'from_zip'} = $zip_from_this_record;
+                $hash{'sim_state'} = 'not started';
 
                 # my $random_non_white = int (rand (1000) + 1);
                 # if ($random_non_white <= $non_white_x_10) {
@@ -375,33 +388,97 @@ foreach my $dir (@date_dirs) {
 }
 
 #
+# ADD UNTESTED POSITIVES
+# ======================
+#
+my $count = @cases_list;
+my $untested_positive_case_count = 0;
+my $temp_hash_ptr = $cases_list[0];
+my $first_simulation_dt = $temp_hash_ptr->{'begin_dt'};
+
+if ($untested_positive > 0) {
+    print ("Adding untested positive cases...\n");
+
+    for (my $i = 0; $i < $count; $i++) {
+        my $existing_case_ptr = shift (@cases_list);
+
+        my $existing_begin_dt = $existing_case_ptr->{'begin_dt'};
+        my $zip_from_this_record = $existing_case_ptr->{'from_zip'};
+
+        my $change = DateTime::Duration->new (days => $i + 1);
+
+        my $new_begin_dt = $existing_begin_dt->clone();
+        $new_begin_dt->subtract_duration ($change);
+
+        my $diff = DateTime->compare ($new_begin_dt, $first_simulation_dt);
+        if ($diff == 1) {
+            #
+            # Create new cases
+            #
+            for (my $nc = 0; $nc < $untested_positive; $nc++) {
+                my %hash;
+                # print ("$case_serial_number\n");
+                $hash{'serial'} = $case_serial_number++;
+                $hash{'begin_dt'} = $new_begin_dt;
+                $hash{'from_zip'} = $zip_from_this_record;
+                $hash{'untested_positive'} = 1;
+                $hash{'sim_state'} = 'not started';
+
+                add_random (\%hash);
+                
+                push (@cases_list, \%hash);
+
+                $untested_positive_case_count++;
+            }
+        }
+        
+        push (@cases_list, $existing_case_ptr);
+    }
+
+    my @new_cases_list = sort case_sort_routine (@cases_list);
+    @cases_list = @new_cases_list;
+    $count = @cases_list;
+}
+
+#
 # Debug...
 #
-my $last_serial;
+my @debug_cases_list;
+my $last_serial = -1;
+my $index = 0;
 foreach my $tc (@cases_list) {
-    my $top_case_start_dt = $tc->{'begin_dt'};
-    my $top_case_stop_dt = $tc->{'end_dt'};
-    $last_serial = $tc->{'serial'};
+    my $begin_dt = $tc->{'begin_dt'};
+    my $stop_dt = $tc->{'end_dt'};
+    my $s = $tc->{'serial'};
+    if ($s > $last_serial) {
+        $last_serial = $s;
+    }
 
-    if (!(defined ($top_case_start_dt))) {
+    my $debug_string = sprintf ("%03d  serial: %03d  begin date: %04d-%02d-%02d",
+        $index++,
+        $s,
+        $begin_dt->year(), $begin_dt->month(), $begin_dt->day());
+    push (@debug_cases_list, $debug_string);
+    # print ("$s is $debug_string\n");
+
+    if (!(defined ($begin_dt))) {
         print ("Start is undefined at " . __LINE__ . "\n");
         exit (1);
     }
 }
 
-my $count = @cases_list;
-print ("Have $count cases\n");
+print ("Have $count cases of which $untested_positive_case_count are untested positives\n");
 print ("Last serial = $last_serial\n");
-
-if ($pp_dont_do_sims) {
-    print ("No sim done!!! \$pp_dont_do_sims flag is set!!!\n");
-    exit (1);
-}
 
 #
 # PROCESS CASES
 # =============
 #
+if ($pp_dont_do_sims) {
+    print ("No sim done!!! \$pp_dont_do_sims flag is set!!!\n");
+    exit (1);
+}
+
 print ("Begin processing cases...\n");
 
 my @output_csv;
@@ -413,7 +490,7 @@ for (my $run_number = 0; $run_number < 6; $run_number++) {
         add_random ($hash_ptr);
     }
 
-    my $ptr = process (\@cases_list);
+    my $ptr = byzip_c::process (\@cases_list, $last_serial, \@debug_cases_list);
     my @this_run_output = @$ptr;
 
     if ($run_number == 0) {
@@ -444,7 +521,7 @@ foreach my $r (@output_csv) {
 
 close (FILE);
 
-make_plot ($dir, \@output_csv, $zip_string);
+byzip_plot::make_plot ($dir, \@output_csv, $zip_string);
 
 
 #
@@ -456,6 +533,19 @@ make_plot ($dir, \@output_csv, $zip_string);
 # print ("  Still sick $currently_sick\n");
 
 exit (1);
+
+
+###################################################################################
+#
+#
+sub case_sort_routine {
+
+    my $a_dt = $a->{'begin_dt'};
+    my $b_dt = $b->{'begin_dt'};
+    
+    return (DateTime->compare ($a_dt, $b_dt));
+}
+
 
 ###################################################################################
 #
@@ -513,207 +603,11 @@ sub make_new_dirs {
     return ($did_something_flag);
 }
 
-sub process {
-    my $cases_list_ptr = shift;
-    
-    my $running_total_of_dead = 0;
-    my $running_total_of_cured = 0;
-    my $currently_sick = 0;
-
-    my @cases_list = @$cases_list_ptr;
-    my $case_count = @cases_list;
-
-    my @output_csv;
-
-    #
-    # Get the earliest and latest dates in the list of cases to
-    # establish sim run time
-    #
-    my $temp_hash_ptr = $cases_list[0];
-    my $sim_start_dt = $temp_hash_ptr->{'begin_dt'};
-
-    $temp_hash_ptr = $cases_list[$case_count - 1];
-    my $sim_end_dt = $temp_hash_ptr->{'begin_dt'};
-
-    my $done = 0;
-    my $current_sim_dt = $sim_start_dt->clone();
-    my $top_case_stop_dt;
-    my $output_line;
-    my $do_startup_safty_check = 1;
-
-    while (!$done) {
-        if ($do_startup_safty_check) {
-            if (!(defined ($current_sim_dt))) {
-                print ("It's broken, Jim\n");
-                exit (1);
-            }
-            $do_startup_safty_check = 0;
-        }
-
-        my $yr = $current_sim_dt->year();
-        my $mo = $current_sim_dt->month();
-        my $da = $current_sim_dt->day();
-        my $dir_string = sprintf ("%04d-%02d-%02d", $yr, $mo, $da);
-
-        if ($pp_report_sim_messages) {
-            print ("\n$dir_string...\n");
-        }
-
-        my $done_with_this_day = 0;
-        my @new_cases_list;
-
-        my $count_for_debug = 0;
-        my $string_for_debug;
-        while (!$done_with_this_day) {
-            $count_for_debug++;
-
-            #
-            # Make a default output line
-            #
-            $output_line = sprintf ("%s,%d,%d,%d,%d",
-                $dir_string,
-                $running_total_of_cured,
-                $currently_sick,
-                0,
-                $running_total_of_dead);
-
-            #
-            # Get the next case
-            #
-            my $top_case_ptr = shift (@cases_list);
-
-            my $top_case_start_dt = $top_case_ptr->{'begin_dt'};
-            my $top_case_stop_dt = $top_case_ptr->{'end_dt'};
-            my $serial = $top_case_ptr->{'serial'};
-
-            if ($serial == $last_serial) {
-                $done_with_this_day = 1;
-            }
-
-            if (!(defined ($top_case_start_dt))) {
-                print ("Start is undefined\n");
-                exit (1);
-            }
-            if (!(defined ($top_case_stop_dt))) {
-                print ("Stop is undefined\n");
-                exit (1);
-            }
-
-            if ($pp_report_sim_messages) {
-                #
-                # Debug
-                #
-                my $debug_string = sprintf ("%04d-%02d-%02d to %04d-%02d-%02d",
-                    $top_case_start_dt->year(), $top_case_start_dt->month(), $top_case_start_dt->day(),
-                    $top_case_stop_dt->year(), $top_case_stop_dt->month(), $top_case_stop_dt->day());
-                print ("\n  Case $serial: $debug_string\n");
-            }
-
-            #
-            # Is it processable?
-            #
-            my $begin_cmp_result = DateTime->compare ($current_sim_dt, $top_case_start_dt);
-            my $end_cmp_result = DateTime->compare ($current_sim_dt, $top_case_stop_dt);
-            if ($pp_report_sim_messages && 0) {
-                print ("    \$begin_cmp_result = $begin_cmp_result\n");
-                print ("    \$end_cmp_result = $end_cmp_result\n");
-            }
-            
-            #     print ("  Top case
-            if ($begin_cmp_result == -1) {
-                #
-                # No, top case can not be processed yet
-                # Put it in the new list. Use the default output line. Declare day is done
-                #
-                push (@new_cases_list, $top_case_ptr);
-                $done_with_this_day = 1;
-                $string_for_debug = 'not processed';
-            }
-            elsif ($begin_cmp_result == 0) {
-                #
-                # Start case
-                # Put it in the new list. Make a new output line
-                #
-                push (@new_cases_list, $top_case_ptr);
-
-                $currently_sick++;
-
-                $output_line = sprintf ("%s,%d,%d,%d,%d",
-                $dir_string,
-                $running_total_of_cured,
-                $currently_sick,
-                0,
-                $running_total_of_dead);
-
-                $string_for_debug = 'new';
-            }
-            elsif ($end_cmp_result == -1) {
-                #
-                # In the middle of this case
-                # Put it in the new list. Use the default output line
-                #
-                push (@new_cases_list, $top_case_ptr);
-
-                $string_for_debug = 'ongoing';
-            }
-            elsif ($end_cmp_result == 0) {
-                #
-                # Ending a case
-                # Do NOT put it in the new list
-                #
-                my $end_status = $top_case_ptr->{'ending_status'};
-                if ($end_status eq 'dead') {
-                    $running_total_of_dead++;
-                }
-                elsif ($end_status eq 'cured') {
-                    $running_total_of_cured++;
-                }
-
-                $currently_sick--;
-
-                $output_line = sprintf ("%s,%d,%d,%d,%d",
-                    $dir_string,
-                    $running_total_of_cured,
-                    $currently_sick,
-                    0,
-                    $running_total_of_dead);
-
-                $string_for_debug = 'ending';
-            }
-            else {
-                print ("No clue how this happened\n");
-                exit (1);
-            }
-
-            if ($pp_report_sim_messages) {
-                    # print ("    \$count_for_debug = $count_for_debug  $string_for_debug\n");
-                print ("    $string_for_debug\n");
-            }
-        }
-        
-        if ($pp_report_sim_messages) {
-            my $cnt = @new_cases_list;
-            print ("  New cases list has $cnt cases\n");
-        }
-
-        push (@new_cases_list, @cases_list);
-        @cases_list = @new_cases_list;
-
-        push (@output_csv, "$output_line");
-
-        $current_sim_dt->add_duration ($dur);
-        if ($current_sim_dt > $sim_end_dt) {
-            $done = 1;
-        }
-    }
-
-    return (\@output_csv);
-}
 
 sub add_random {
     my $hash_ptr = shift;
 
-    my $local_start_dt = $hash_ptr->{'begin_dt'};
+    my $local_begin_dt = $hash_ptr->{'begin_dt'};
 
     #
     # Get a random value between 1 and 1000 inclusive
@@ -726,7 +620,7 @@ sub add_random {
         my $sickness_dur = DateTime::Duration->new (
             days        => 3);
 
-        my $end_dt = $local_start_dt->clone();
+        my $end_dt = $local_begin_dt->clone();
         $end_dt->add_duration ($sickness_dur);
 
         $hash_ptr->{'ending_status'} = 'dead';
@@ -745,7 +639,7 @@ sub add_random {
         #
         # Make the end date
         #
-        my $end_dt = $local_start_dt->clone();
+        my $end_dt = $local_begin_dt->clone();
         $end_dt->add_duration ($sickness_dur);
 
         $hash_ptr->{'end_dt'} = $end_dt;
@@ -767,94 +661,3 @@ sub add_random {
     }
 }
 
-sub make_plot {
-    my $dir = shift;
-    my $csv_ptr = shift;
-    my $title = shift;
-
-    my @data;
-    
-    my @csv_array = @$csv_ptr;
-
-    my @new_array;
-
-    my @header_array;
-    my @cured_1_array;
-    my @cured_2_array;
-    my @cured_3_array;
-    my @sick_1_array;
-    my @sick_alt_1_array;
-    my @sick_2_array;
-    my @sick_alt_2_array;
-    my @sick_3_array;
-    my @sick_alt_3_array;
-    my @dead_1_array;
-    my @dead_2_array;
-    my @dead_3_array;
-
-    my $len = @$csv_ptr;
-    for (my $i = 0; $i < $len; $i++) {
-        my @columns = split (',', $csv_array[$i]);
-
-        #
-        # Column header is [0]
-        #
-        my $src = 0;
-        $header_array[$i] = $columns[$src++];
-
-        $cured_1_array[$i] = $columns[$src++];
-        $sick_1_array[$i] = $columns[$src++];
-        $sick_alt_1_array[$i] = $columns[$src++];
-        $dead_1_array[$i] = $columns[$src++];
-        
-        $cured_2_array[$i] = $columns[$src++];
-        $sick_2_array[$i] = $columns[$src++];
-        $sick_alt_2_array[$i] = $columns[$src++];
-        $dead_2_array[$i] = $columns[$src++];
-        
-        $cured_3_array[$i] = $columns[$src++];
-        $sick_3_array[$i] = $columns[$src++];
-        $sick_alt_3_array[$i] = $columns[$src++];
-        $dead_3_array[$i] = $columns[$src++];
-    }
-
-    push (@data, \@header_array);
-
-    push (@data, \@cured_1_array);
-    push (@data, \@sick_1_array);
-    push (@data, \@sick_alt_1_array);
-    push (@data, \@dead_1_array);
-
-    push (@data, \@cured_2_array);
-    push (@data, \@sick_2_array);
-    push (@data, \@sick_alt_2_array);
-    push (@data, \@dead_2_array);
-
-    push (@data, \@cured_3_array);
-    push (@data, \@sick_3_array);
-    push (@data, \@sick_alt_3_array);
-    push (@data, \@dead_3_array);
-
-    my $graph_file = "$dir/graph.gif";
-
-    my $graph = GD::Graph::lines->new (1500, 750);
-    $graph->set( 
-            x_label 	=> 'Dates', 
-            y_label 	=> 'Cases', 
-            title  		=> $title, 
-            #cumulate 	=> 1, 
-            dclrs 		=> [ 'green', 'orange', 'blue', 'red' ], 
-            borderclrs 	=> [ qw(black black), qw(black black) ], 
-            bar_spacing => 4, 
-            transparent => 1,
-            show_values => 0
-    ); 
-
-    my $gd = $graph->plot(\@data) or die $graph->error; 
-
-    open(IMG, ">","$graph_file") or die $!;
-    binmode IMG;
-    print IMG $gd->gif;
-    close IMG;
-
-}
