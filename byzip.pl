@@ -28,6 +28,7 @@ use lib '.';
 use byzip_a;
 use byzip_b;
 use byzip_c;
+use byzip_v;
 use byzip_plot;
 
 package main;
@@ -37,6 +38,8 @@ package main;
 # Any variable that begins with 'pp_' is a program parameter and is usually a flag to enable
 # or disable some feature
 #
+
+my $pp_do_everything_relative_to_startup_dir = 0;
 
 #
 # Edit the following as needed. If you are using Linux, ignore '_windows' and vice versa
@@ -49,39 +52,67 @@ my $pp_report_sim_messages = 0;
 my $pp_report_adding_case = 0;
 my $pp_dont_do_sims = 0;
 our $pp_report_header_changes = 0;
+# my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG?usp=sharing';
+my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG';
+my $pp_first_directory = '2020-04-08';
+my $pp_relative_local_data_dir = 'byzip_local_data_store';
 
-#
-# This stuff is for the name_new_dirs routine
-#
-my $dur = DateTime::Duration->new(
-    days        => 1);
-my $now = DateTime->now;
-my $last_dt;
 
 #
 # Get current directory and determine platform
 #
+my $windows_flag;
 my $cwd = Cwd::cwd();
-my $windows_flag = 0;
+$windows_flag = 0;
 if ($cwd =~ /^[C-Z]:/) {
     $windows_flag = 1;
 }
 
 #
-# Go to root dir
+# Set $dir to whatever directory the work is to be done in
 #
 my $dir;
-if ($windows_flag) {
-    $dir = lc $fq_root_dir_for_windows;
+if ($pp_do_everything_relative_to_startup_dir == 0) {
+    #
+    # Go to root dir
+    #
+    if ($windows_flag) {
+        $dir = lc $fq_root_dir_for_windows;
+    }
+    else {
+        $dir = $fq_root_dir_for_linux;
+    }
+
+    $CWD = $dir;
+    $cwd = Cwd::cwd();
+    # print ("Current working directory is $cwd\n");
 }
 else {
-    $dir = $fq_root_dir_for_linux;
+    $dir = $cwd;
 }
-$CWD = $dir;
-$cwd = Cwd::cwd();
-# print ("Current working directory is $cwd\n");
 
-my  $pp_output_file = "$dir/byzip-output.csv";
+#
+# Determine the location of the output file
+#
+my  $pp_output_file;
+if ($pp_do_everything_relative_to_startup_dir == 0) {
+    $pp_output_file = "$dir/byzip-output.csv";
+}
+else {
+    $pp_output_file = "$pp_relative_local_data_dir/byzip-output.csv";
+}
+
+# if ($pp_do_everything_relative_to_startup_dir) {
+#     my $fq_data_store_dir = "$cwd/$pp_relative_local_data_dir";
+
+#     if not (-e $fq_data_store_dir) {
+#         print ("Grant permission to create local directory $fq_data_store_dir and populate with downloaded zip data .csv files? [y/n]");
+#         my $nv = uc <STDIN>;  # force uppercase
+#                 $nv =~ s/[\r\n]+//;
+#                 if ($nv =~ /[MFB]/) {
+#     }
+
+# if (-e 
 
 my $zip_string;
 my $mortality = 3.1;
@@ -91,6 +122,7 @@ my $untested_positive = 0;
 # my $non_white;
 # my $white;
 my $severity = '40:40:20';
+my $plot_output_flag = 0;
 
 my @date_dirs;
 
@@ -111,6 +143,14 @@ foreach my $switch (@ARGV) {
     elsif (index ($lc_switch, 'duration_max=') != -1) {
         my $val = substr ($switch, 13);
         $duration_max = int ($val);
+    }
+    elsif (index ($lc_switch, 'plot=') != -1) {
+        my $val = substr ($switch, 5);
+        if ($val =~ /[^01]/) {
+            print ("Invalid plot switch. Should be 0 or 1\n");
+            exit (1);
+        }
+        $plot_output_flag = int ($val);
     }
     elsif (index ($lc_switch, $untested_positive_switch) != -1) {
         my $val = substr ($switch, $untested_positive_switch_string_len);
@@ -141,10 +181,17 @@ print ("  Untested = add $untested_positive untested positive cases for every on
 # print ("  Non_white = $non_white percent\n");
 # print ("  Severity = $severity disease severity groups: no symptoms, moderate and severe\n");
 # print ("      (Values are percents, total must be 100)\n");
+print ("  Plot output = $plot_output_flag (0 = no, 1 = yes)\n");
 
 my @csv_files;
 my $mortality_x_10 = int ($mortality * 10);
 # my $non_white_x_10 = int ($non_white * 10);
+
+#
+#
+#
+# use LWP::Simple;
+# getstore($url, $file);
 
 if ($pp_create_missing_directories) {
     #
@@ -388,6 +435,12 @@ foreach my $dir (@date_dirs) {
 }
 
 #
+# 
+#
+my ($last_serial, $debug_cases_list_ptr) = byzip_v::verify_case_list (\@cases_list);
+my @debug_cases_list = @$debug_cases_list_ptr;
+
+#
 # ADD UNTESTED POSITIVES
 # ======================
 #
@@ -441,31 +494,10 @@ if ($untested_positive > 0) {
 }
 
 #
-# Debug...
+# 
 #
-my @debug_cases_list;
-my $last_serial = -1;
-my $index = 0;
-foreach my $tc (@cases_list) {
-    my $begin_dt = $tc->{'begin_dt'};
-    my $stop_dt = $tc->{'end_dt'};
-    my $s = $tc->{'serial'};
-    if ($s > $last_serial) {
-        $last_serial = $s;
-    }
-
-    my $debug_string = sprintf ("%03d  serial: %03d  begin date: %04d-%02d-%02d",
-        $index++,
-        $s,
-        $begin_dt->year(), $begin_dt->month(), $begin_dt->day());
-    push (@debug_cases_list, $debug_string);
-    # print ("$s is $debug_string\n");
-
-    if (!(defined ($begin_dt))) {
-        print ("Start is undefined at " . __LINE__ . "\n");
-        exit (1);
-    }
-}
+($last_serial, $debug_cases_list_ptr) = byzip_v::verify_case_list (\@cases_list);
+@debug_cases_list = @$debug_cases_list_ptr;
 
 print ("Have $count cases of which $untested_positive_case_count are untested positives\n");
 print ("Last serial = $last_serial\n");
@@ -481,10 +513,15 @@ if ($pp_dont_do_sims) {
 
 print ("Begin processing cases...\n");
 
+my $cured_accum = 0;
+my $sick_accum = 0;
+my $untested_positive_accum = 0;
+my $dead_accum = 0;
+my $number_of_sims = 3;
 my @output_csv;
 my $output_count;
 my $output_header;
-for (my $run_number = 0; $run_number < 6; $run_number++) {
+for (my $run_number = 0; $run_number < $number_of_sims; $run_number++) {
 
     foreach my $hash_ptr (@cases_list) {
         add_random ($hash_ptr);
@@ -492,6 +529,20 @@ for (my $run_number = 0; $run_number < 6; $run_number++) {
 
     my $ptr = byzip_c::process (\@cases_list, $last_serial, \@debug_cases_list);
     my @this_run_output = @$ptr;
+
+    #
+    # Capture the last values
+    #
+    my $len = @this_run_output;
+    my $last_record = $this_run_output[$len - 1];
+    my $values = substr ($last_record, 11);
+    print ("\$values = $values\n");
+
+    my @seperated = split (',', $values);
+    $cured_accum += $seperated[0];
+    $sick_accum += $seperated[1];
+    $untested_positive_accum += $seperated[2];
+    $dead_accum += $seperated[3];
 
     if ($run_number == 0) {
         @output_csv = @this_run_output;
@@ -503,7 +554,8 @@ for (my $run_number = 0; $run_number < 6; $run_number++) {
         for (my $j = 0; $j < $output_count; $j++) {
             my $existing = shift (@output_csv);
             my $new = shift (@this_run_output);
-            my $t = substr ($new, 10);
+            my $t = substr ($new, 11);
+            # print ("\$t = $t\n");
             my $s = $existing .= $t;
             push (@new_output_csv, $s);
         }
@@ -521,16 +573,17 @@ foreach my $r (@output_csv) {
 
 close (FILE);
 
-byzip_plot::make_plot ($dir, \@output_csv, $zip_string);
+if ($plot_output_flag) {
+    byzip_plot::make_plot ($dir, \@output_csv, $zip_string);
+}
 
-
 #
 #
 #
-# print ("At end of simulation:\n");
-# print ("  Dead: $running_total_of_dead\n");
-# print ("  Cured: $running_total_of_cured\n");
-# print ("  Still sick $currently_sick\n");
+print ("At end of simulation:\n");
+print ("  Dead: " . int ($dead_accum / $number_of_sims) . "\n");
+print ("  Cured: " . int ($cured_accum / $number_of_sims) . "\n");
+print ("  Still sick " . int ($sick_accum / $number_of_sims) . "\n");
 
 exit (1);
 
@@ -552,6 +605,12 @@ sub case_sort_routine {
 #
 sub make_new_dirs {
     my $dir = shift;
+
+    #
+    # This stuff is for the name_new_dirs routine
+    #
+    my $dur = DateTime::Duration->new (days => 1);
+    my $now = DateTime->now;
 
     my @all_date_dirs;
     my $did_something_flag = 0;
