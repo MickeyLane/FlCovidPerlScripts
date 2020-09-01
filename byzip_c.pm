@@ -7,12 +7,12 @@ use strict;
 # This file is part of byzip.pl. See information at the top of that file
 #
 
-my $print_stuff = $main::pp_report_sim_messages;
 
 sub process {
     my $cases_list_ptr = shift;
     my $last_serial = shift;
     my $debug_cases_list_ptr = shift;
+    my $print_stuff = shift;
     
     my $running_total_of_dead = 0;
     my $running_total_of_cured = 0;
@@ -51,10 +51,7 @@ sub process {
             $do_startup_safty_check = 0;
         }
 
-        my $yr = $current_sim_dt->year();
-        my $mo = $current_sim_dt->month();
-        my $da = $current_sim_dt->day();
-        my $dir_string = sprintf ("%04d-%02d-%02d", $yr, $mo, $da);
+        my $dir_string = main::make_printable_date_string ($current_sim_dt);
 
         if ($print_stuff) {
             print ("\n$dir_string...\n");
@@ -63,11 +60,11 @@ sub process {
         my $done_with_this_day = 0;
         my @new_cases_list;
 
-        my $count_for_debug = 0;
+        # byzip_v::verify_case_list (\@cases_list);
+
+        my $case_index = 0;
         my $string_for_debug;
         while (!$done_with_this_day) {
-            $count_for_debug++;
-
             #
             # Make a default output line
             #
@@ -98,17 +95,28 @@ sub process {
 
             if ($serial == $last_serial) {
                 $done_with_this_day = 1;
+
+                if ($print_stuff) {
+                    print ("  Last to be processed is serial $serial in state \"$case_state\"\n");
+                }
+            }
+            else {
+                if ($print_stuff) {
+                    my $b = main::make_printable_date_string ($top_case_begin_dt);
+                    my $e = main::make_printable_date_string ($top_case_end_dt);
+                    print ("  Processing serial $serial ($b to $e) in state \"$case_state\"\n");
+                }
             }
 
-            if ($print_stuff) {
-                #
-                # Debug
-                #
-                my $debug_string = sprintf ("%04d-%02d-%02d to %04d-%02d-%02d",
-                    $top_case_begin_dt->year(), $top_case_begin_dt->month(), $top_case_begin_dt->day(),
-                    $top_case_end_dt->year(), $top_case_end_dt->month(), $top_case_end_dt->day());
-                print ("\n  Case $serial: $debug_string\n");
-            }
+            # if ($print_stuff) {
+            #     #
+            #     # Debug
+            #     #
+            #     my $debug_string = sprintf ("%04d-%02d-%02d to %04d-%02d-%02d",
+            #         $top_case_begin_dt->year(), $top_case_begin_dt->month(), $top_case_begin_dt->day(),
+            #         $top_case_end_dt->year(), $top_case_end_dt->month(), $top_case_end_dt->day());
+            #     print ("  Case $serial: $debug_string\n");
+            # }
 
             #
             # Is it processable?
@@ -130,15 +138,17 @@ sub process {
             if ($begin_cmp_result == -1) {
                 #
                 # No, top case can not be processed yet
-                # Put it in the new list. Use the default output line. Declare day is done
+                # Put it in the new list. Use the default output line
                 #
                 push (@new_cases_list, $top_case_ptr);
-                $done_with_this_day = 1;
+                # $done_with_this_day = 1;
                 $string_for_debug = 'not processed';
             }
             elsif ($begin_cmp_result == 0) {
                 #
-                # Start case
+                # Begin
+                # -----
+                #
                 # Put it in the new list. Make a new output line
                 #
                 push (@new_cases_list, $top_case_ptr);
@@ -171,15 +181,24 @@ sub process {
             }
             elsif ($end_cmp_result == -1) {
                 #
-                # In the middle of this case
+                # In progress
+                # -----------
+                #
                 # Put it in the new list. Use the default output line
                 #
-
                 my $state = $top_case_ptr->{'sim_state'};
-                if (index ($state, 'sick') == -1) {
-                    print ("Found an in-progress case not marked sick\n");
-                    print ("\$state = $state\n");
-                    exit (1);
+                if ($state ne 'sick' && $state ne 'untested positive sick') {
+                    print ("\n$dir_string...\n");
+                    print ("  Found an in-progress case not marked \"sick.\" Marked \"$state\"\n");
+
+                    # byzip_v::verify_case_list (\@cases_list);
+
+                    byzip_debug::report_case (
+                        \@new_cases_list,
+                        $top_case_ptr,
+                        \@cases_list,
+                        $begin_cmp_result,
+                        $end_cmp_result);
                 }
 
                 push (@new_cases_list, $top_case_ptr);
@@ -188,7 +207,9 @@ sub process {
             }
             elsif ($end_cmp_result == 0) {
                 #
-                # Ending a case
+                # End a case
+                # ----------
+                #
                 # Do NOT put it in the new list
                 #
                 my $end_status = $top_case_ptr->{'ending_status'};
@@ -236,47 +257,31 @@ sub process {
                 # Case ended before the current sim date
                 # Do NOT put it in the new list
                 #
+                print ("Found a case that ended before the current sim date\n");
+                exit (1);
             }
             else {
                 print ("No clue how this happened\n");
 
-                my @debug_cases_list = @$debug_cases_list_ptr;
-                my $max_lines = @debug_cases_list;
-                my $first_line_to_print = $count_for_debug - 100;
-                if ($first_line_to_print < 0) {
-                    $first_line_to_print = 0;
-                }
-                my $last_line_to_print = $count_for_debug + 100;
-                if ($last_line_to_print > $max_lines - 1) {
-                    $last_line_to_print = $max_lines - 1;
-                }
+                # my $cases_list_1_ptr = byzip_debug::make_case_list (\@new_cases_list);
+                # my $cases_list_2_ptr = byzip_debug::make_case_list (\@cases_list);
 
-                for (my $i = $first_line_to_print; $i <= $last_line_to_print; $i++) {
-                    print ("$debug_cases_list[$i]\n");
-                }
-
-                my $debug_string = sprintf ("%04d-%02d-%02d",
-                    $current_sim_dt->year(), $current_sim_dt->month(), $current_sim_dt->day());
-                # print ("  \$current_sim_dt is $debug_string\n");
-                print ("  Sim pass $count_for_debug is doing $debug_string\n");
-
-                my $end_debug_string = sprintf ("%04d-%02d-%02d",
-                    $top_case_end_dt->year(), $top_case_end_dt->month(), $top_case_end_dt->day());
-                # print ("  \$top_case_end_dt is $debug_string\n");
-
-                my $begin_debug_string = sprintf ("%04d-%02d-%02d",
-                    $top_case_begin_dt->year(), $top_case_begin_dt->month(), $top_case_begin_dt->day());
-                print ("  Case is sick: $begin_debug_string to $end_debug_string\n");
-
-                print ("  \$begin_cmp_result = $begin_cmp_result\n");
-                print ("  \$end_cmp_result = $end_cmp_result\n");
-                exit (1);
+                byzip_debug::report_case (
+                    \@new_cases_list,
+                    $top_case_ptr,
+                    \@cases_list,
+                    # $case_index,
+                    # $current_sim_dt,
+                    # $top_case_begin_dt, $top_case_end_dt,
+                    $begin_cmp_result, $end_cmp_result);
             }
 
             if ($print_stuff) {
-                    # print ("    \$count_for_debug = $count_for_debug  $string_for_debug\n");
-                print ("    $string_for_debug\n");
+                    # print ("    \$case_index = $case_index  $string_for_debug\n");
+                print ("  Result: $string_for_debug\n");
             }
+
+            $case_index++;
         }
         
         if ($print_stuff) {
@@ -300,5 +305,6 @@ sub process {
 
     return (\@output_csv);
 }
+
 
 1;

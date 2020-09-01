@@ -30,6 +30,7 @@ use byzip_b;
 use byzip_c;
 use byzip_v;
 use byzip_plot;
+use byzip_debug;
 
 package main;
 
@@ -39,23 +40,28 @@ package main;
 # or disable some feature
 #
 
-my $pp_do_everything_relative_to_startup_dir = 0;
+#
+# Use data from Google Drive
+#
+our $pp_do_everything_relative_to_startup_dir = 0;
+# my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG?usp=sharing';
+my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG';
 
 #
 # Edit the following as needed. If you are using Linux, ignore '_windows' and vice versa
 #
 my $fq_root_dir_for_windows = 'D:/Covid_ByZip';
 my $fq_root_dir_for_linux = '/home/mickey/Covid_ByZip';
-my $pp_create_missing_directories = 1;
+
+
+our $pp_create_missing_directories = 1;
 our $pp_report_generation_messages = 0;
-my $pp_report_sim_messages = 0;
-my $pp_report_adding_case = 0;
-my $pp_dont_do_sims = 0;
+our $pp_report_sim_messages = 0;
+our $pp_report_adding_case = 0;
+our $pp_dont_do_sims = 0;
 our $pp_report_header_changes = 0;
-# my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG?usp=sharing';
-my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG';
-my $pp_first_directory = '2020-04-08';
-my $pp_relative_local_data_dir = 'byzip_local_data_store';
+our $pp_first_directory = '2020-04-08';
+our $pp_relative_local_data_dir = 'byzip_local_data_store';
 
 
 #
@@ -67,6 +73,7 @@ $windows_flag = 0;
 if ($cwd =~ /^[C-Z]:/) {
     $windows_flag = 1;
 }
+print ("Current working directory is $cwd\n");
 
 #
 # Set $dir to whatever directory the work is to be done in
@@ -85,7 +92,6 @@ if ($pp_do_everything_relative_to_startup_dir == 0) {
 
     $CWD = $dir;
     $cwd = Cwd::cwd();
-    # print ("Current working directory is $cwd\n");
 }
 else {
     $dir = $cwd;
@@ -102,17 +108,49 @@ else {
     $pp_output_file = "$pp_relative_local_data_dir/byzip-output.csv";
 }
 
-# if ($pp_do_everything_relative_to_startup_dir) {
-#     my $fq_data_store_dir = "$cwd/$pp_relative_local_data_dir";
+#
+# If using data from Google share, see if a local store exists
+#
+if ($pp_do_everything_relative_to_startup_dir) {
+    my $fq_data_store_dir = "$cwd/$pp_relative_local_data_dir";
+    print ("Checking for $fq_data_store_dir...\n");
+    if (!(-e $fq_data_store_dir)) {
+        #
+        # Local storage dir does not exist
+        #
+        print ("\nGrant permission to create local directory $fq_data_store_dir and\n");
+        print ("   populate with downloaded zip data .csv files from a Google Drive? [y/n] ");
+        my $nv = uc <STDIN>;  # force uppercase
+        $nv =~ s/[\r\n]+//;
+        if ($nv =~ /Y/) {
+            #
+            # Yes
+            #
+            print ("Making $fq_data_store_dir\n");
+            mkdir ($fq_data_store_dir) or die "Could not make $fq_data_store_dir: $!";
+        }
+        else {
+            #
+            # No
+            #
+            print ("Permission not granted, execution halted\n");
+            exit (1);
+        }
+    }
 
-#     if not (-e $fq_data_store_dir) {
-#         print ("Grant permission to create local directory $fq_data_store_dir and populate with downloaded zip data .csv files? [y/n]");
-#         my $nv = uc <STDIN>;  # force uppercase
-#                 $nv =~ s/[\r\n]+//;
-#                 if ($nv =~ /[MFB]/) {
-#     }
+    my $fq_first_date_dir = "$fq_data_store_dir/$pp_first_directory";
+    print ("Checking for $fq_first_date_dir...\n");
+    if (!(-e $fq_first_date_dir)) {
+        print ("Making $fq_first_date_dir\n");
+        my $status = mkdir ($fq_data_store_dir);
+        my $reason = $!;
+        if ($status == 0) {
+            print ("Could not make $fq_first_date_dir: $reason\n");
+            exit (1);
+        }
+    }
 
-# if (-e 
+}
 
 my $zip_string;
 my $mortality = 3.1;
@@ -437,7 +475,9 @@ foreach my $dir (@date_dirs) {
 #
 # 
 #
-my ($last_serial, $debug_cases_list_ptr) = byzip_v::verify_case_list (\@cases_list);
+my $last_serial = byzip_v::verify_case_list (\@cases_list);
+
+my $debug_cases_list_ptr = byzip_debug::make_case_list (\@cases_list);
 my @debug_cases_list = @$debug_cases_list_ptr;
 
 #
@@ -491,13 +531,15 @@ if ($untested_positive > 0) {
     my @new_cases_list = sort case_sort_routine (@cases_list);
     @cases_list = @new_cases_list;
     $count = @cases_list;
+    #
+    # 
+    #
+    $last_serial = byzip_v::verify_case_list (\@cases_list);
+
+    $debug_cases_list_ptr = byzip_debug::make_case_list (\@cases_list);
+    @debug_cases_list = @$debug_cases_list_ptr;
 }
 
-#
-# 
-#
-($last_serial, $debug_cases_list_ptr) = byzip_v::verify_case_list (\@cases_list);
-@debug_cases_list = @$debug_cases_list_ptr;
 
 print ("Have $count cases of which $untested_positive_case_count are untested positives\n");
 print ("Last serial = $last_serial\n");
@@ -511,7 +553,7 @@ if ($pp_dont_do_sims) {
     exit (1);
 }
 
-print ("Begin processing cases...\n");
+print ("Begin simulation...\n");
 
 my $cured_accum = 0;
 my $sick_accum = 0;
@@ -527,7 +569,7 @@ for (my $run_number = 0; $run_number < $number_of_sims; $run_number++) {
         add_random ($hash_ptr);
     }
 
-    my $ptr = byzip_c::process (\@cases_list, $last_serial, \@debug_cases_list);
+    my $ptr = byzip_c::process (\@cases_list, $last_serial, \@debug_cases_list, $pp_report_sim_messages);
     my @this_run_output = @$ptr;
 
     #
@@ -536,7 +578,7 @@ for (my $run_number = 0; $run_number < $number_of_sims; $run_number++) {
     my $len = @this_run_output;
     my $last_record = $this_run_output[$len - 1];
     my $values = substr ($last_record, 11);
-    print ("\$values = $values\n");
+    # print ("\$values = $values\n");
 
     my @seperated = split (',', $values);
     $cured_accum += $seperated[0];
@@ -720,3 +762,11 @@ sub add_random {
     }
 }
 
+sub make_printable_date_string {
+    my $dt = shift;
+
+    my $string = sprintf ("%04d-%02d-%02d",
+        $dt->year(), $dt->month(), $dt->day());
+
+    return ($string);
+}
