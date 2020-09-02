@@ -16,6 +16,8 @@ use strict;
 sub get_records {
     my $found_csv_file = shift;
     my $zip_list_ptr = shift;
+    my $report_generation_messages = shift;
+    my $report_header_changes = shift;
 
     my $record_number = 0;
     my $header_string;
@@ -82,7 +84,7 @@ sub get_records {
                 exit (1);
             }
 
-            if ($main::pp_report_generation_messages && $main::pp_report_header_changes) {
+            if ($report_generation_messages && $report_header_changes) {
                 if ($changed_flag) {
                     print ("  Header change:\n");
                     print ("    'cases_1' offset is $cases_column_offset\n");

@@ -35,7 +35,7 @@ sub make_case_list {
 }
 
 sub report_case {
-    my ($cases_list_1_ptr, $current_case, $cases_list_2_ptr, $begin_cmp_result, $end_cmp_result) = @_;
+    my ($cases_list_1_ptr, $current_case, $cases_list_2_ptr) = @_;
 
     # my $debug_cases_list_ptr = shift;
     # my $case_index = shift;
@@ -97,8 +97,6 @@ sub report_case {
         }
     }
 
-    # byzip_v::verify_case_list (\@list);
-
     foreach my $p (@debug_cases_list) {
         print ("$p\n");
     }
@@ -116,8 +114,8 @@ sub report_case {
     #     $top_case_begin_dt->year(), $top_case_begin_dt->month(), $top_case_begin_dt->day());
     # print ("  Case is sick: $begin_debug_string to $end_debug_string\n");
 
-    print ("  \$begin_cmp_result = $begin_cmp_result\n");
-    print ("  \$end_cmp_result = $end_cmp_result\n");
+    # print ("  \$begin_cmp_result = $begin_cmp_result\n");
+    # print ("  \$end_cmp_result = $end_cmp_result\n");
     exit (1);
 }
 

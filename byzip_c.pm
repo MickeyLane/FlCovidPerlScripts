@@ -60,9 +60,8 @@ sub process {
         my $done_with_this_day = 0;
         my @new_cases_list;
 
-        # byzip_v::verify_case_list (\@cases_list);
+         my $current_sim_epoch = $current_sim_dt->epoch();
 
-        my $case_index = 0;
         my $string_for_debug;
         while (!$done_with_this_day) {
             #
@@ -92,12 +91,25 @@ sub process {
             }
             my $serial = $top_case_ptr->{'serial'};
             my $case_state = $top_case_ptr->{'sim_state'};
+            my $this_case_begin_epoch = $top_case_begin_dt->epoch();
+            my $this_case_end_epoch = $top_case_end_dt->epoch();
 
-            if ($serial == $last_serial) {
+            my $duration = $this_case_begin_epoch - $current_sim_epoch;
+            my $days = 0;
+            if ($duration > 0) {
+                $days = $duration / 86400;
+            }
+
+
+            $days = 0;
+
+
+
+            if ($serial == $last_serial || $days > 10) {
                 $done_with_this_day = 1;
 
                 if ($print_stuff) {
-                    print ("  Last to be processed is serial $serial in state \"$case_state\"\n");
+                    print ("  Processing last serial $serial in state \"$case_state\"\n");
                 }
             }
             else {
@@ -108,25 +120,12 @@ sub process {
                 }
             }
 
-            # if ($print_stuff) {
-            #     #
-            #     # Debug
-            #     #
-            #     my $debug_string = sprintf ("%04d-%02d-%02d to %04d-%02d-%02d",
-            #         $top_case_begin_dt->year(), $top_case_begin_dt->month(), $top_case_begin_dt->day(),
-            #         $top_case_end_dt->year(), $top_case_end_dt->month(), $top_case_end_dt->day());
-            #     print ("  Case $serial: $debug_string\n");
+            # my $begin_cmp_result = DateTime->compare ($current_sim_dt, $top_case_begin_dt);
+            # my $end_cmp_result = DateTime->compare ($current_sim_dt, $top_case_end_dt);
+            # if ($print_stuff && 0) {
+            #     print ("    \$begin_cmp_result = $begin_cmp_result\n");
+            #     print ("    \$end_cmp_result = $end_cmp_result\n");
             # }
-
-            #
-            # Is it processable?
-            #
-            my $begin_cmp_result = DateTime->compare ($current_sim_dt, $top_case_begin_dt);
-            my $end_cmp_result = DateTime->compare ($current_sim_dt, $top_case_end_dt);
-            if ($print_stuff && 0) {
-                print ("    \$begin_cmp_result = $begin_cmp_result\n");
-                print ("    \$end_cmp_result = $end_cmp_result\n");
-            }
             
             # if ($end_cmp_result == -1 && $case_state eq 'not started') {
             #     #
@@ -134,8 +133,16 @@ sub process {
             #     #
             #     $begin_cmp_result = 0;
             # }
+            if ($this_case_end_epoch < $current_sim_epoch) {
+                #
+                # Case ended before the current sim date
+                # Do NOT put it in the new list
+                #
+                print ("Found a case that ended before the current sim date\n");
+                exit (1);
+            }
 
-            if ($begin_cmp_result == -1) {
+            if ($this_case_begin_epoch > $current_sim_epoch) {
                 #
                 # No, top case can not be processed yet
                 # Put it in the new list. Use the default output line
@@ -143,8 +150,11 @@ sub process {
                 push (@new_cases_list, $top_case_ptr);
                 # $done_with_this_day = 1;
                 $string_for_debug = 'not processed';
+
+                goto end_of_cases_for_this_sim_date;
             }
-            elsif ($begin_cmp_result == 0) {
+
+            if ($this_case_begin_epoch == $current_sim_epoch) {
                 #
                 # Begin
                 # -----
@@ -160,7 +170,7 @@ sub process {
 
                 if ($this_is_an_untested_positive_case) {
                     $untested_positive_currently_sick++;
-                    print ("+++ \$untested_positive_currently_sick = $untested_positive_currently_sick\n");
+                    # print ("+++ \$untested_positive_currently_sick = $untested_positive_currently_sick\n");
 
                     $top_case_ptr->{'sim_state'} = 'untested positive sick';
 
@@ -178,8 +188,13 @@ sub process {
                     $running_total_of_dead);
 
                 $string_for_debug = 'new';
+
+                goto end_of_cases_for_this_sim_date;
+
             }
-            elsif ($end_cmp_result == -1) {
+
+
+            if ($this_case_end_epoch > $current_sim_epoch) {
                 #
                 # In progress
                 # -----------
@@ -191,21 +206,20 @@ sub process {
                     print ("\n$dir_string...\n");
                     print ("  Found an in-progress case not marked \"sick.\" Marked \"$state\"\n");
 
-                    # byzip_v::verify_case_list (\@cases_list);
-
                     byzip_debug::report_case (
                         \@new_cases_list,
                         $top_case_ptr,
-                        \@cases_list,
-                        $begin_cmp_result,
-                        $end_cmp_result);
+                        \@cases_list);
                 }
 
                 push (@new_cases_list, $top_case_ptr);
 
                 $string_for_debug = 'ongoing';
+
+                goto end_of_cases_for_this_sim_date;
             }
-            elsif ($end_cmp_result == 0) {
+
+            if ($this_case_end_epoch == $current_sim_epoch) {
                 #
                 # End a case
                 # ----------
@@ -237,7 +251,7 @@ sub process {
                         exit (1);
                     }
                     $untested_positive_currently_sick--;
-                    print ("--- \$untested_positive_currently_sick = $untested_positive_currently_sick\n");
+                    # print ("--- \$untested_positive_currently_sick = $untested_positive_currently_sick\n");
                 }
                 else {
                     $currently_sick--;
@@ -251,37 +265,25 @@ sub process {
                     $running_total_of_dead);
 
                 $string_for_debug = 'ending';
-            }
-            elsif ($end_cmp_result == 1) {
-                #
-                # Case ended before the current sim date
-                # Do NOT put it in the new list
-                #
-                print ("Found a case that ended before the current sim date\n");
-                exit (1);
-            }
-            else {
-                print ("No clue how this happened\n");
 
-                # my $cases_list_1_ptr = byzip_debug::make_case_list (\@new_cases_list);
-                # my $cases_list_2_ptr = byzip_debug::make_case_list (\@cases_list);
-
-                byzip_debug::report_case (
-                    \@new_cases_list,
-                    $top_case_ptr,
-                    \@cases_list,
-                    # $case_index,
-                    # $current_sim_dt,
-                    # $top_case_begin_dt, $top_case_end_dt,
-                    $begin_cmp_result, $end_cmp_result);
+                goto end_of_cases_for_this_sim_date;
             }
+
+            print ("No clue how this happened\n");
+
+            # my $cases_list_1_ptr = byzip_debug::make_case_list (\@new_cases_list);
+            # my $cases_list_2_ptr = byzip_debug::make_case_list (\@cases_list);
+
+            byzip_debug::report_case (
+                \@new_cases_list,
+                $top_case_ptr,
+                \@cases_list);
+
+end_of_cases_for_this_sim_date:
 
             if ($print_stuff) {
-                    # print ("    \$case_index = $case_index  $string_for_debug\n");
                 print ("  Result: $string_for_debug\n");
             }
-
-            $case_index++;
         }
         
         if ($print_stuff) {

@@ -7,13 +7,12 @@ use strict;
 # This file is part of byzip.pl. See information at the top of that file
 #
 
-my $print_stuff = $main::pp_report_generation_messages;
-
 sub validate_records {
     my $ptr = shift;
     my $cases_column_offset = shift;
     my $zip_column_offset = shift;
     my $zip_list_ptr = shift;
+    my $print_stuff = shift;
 
     my @possibly_useful_records = @$ptr;
     my @useful_records;

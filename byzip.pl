@@ -43,7 +43,7 @@ package main;
 #
 # Use data from Google Drive
 #
-our $pp_do_everything_relative_to_startup_dir = 0;
+my $pp_do_everything_relative_to_startup_dir = 0;
 # my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG?usp=sharing';
 my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG';
 
@@ -54,14 +54,14 @@ my $fq_root_dir_for_windows = 'D:/Covid_ByZip';
 my $fq_root_dir_for_linux = '/home/mickey/Covid_ByZip';
 
 
-our $pp_create_missing_directories = 1;
-our $pp_report_generation_messages = 0;
-our $pp_report_sim_messages = 0;
-our $pp_report_adding_case = 0;
-our $pp_dont_do_sims = 0;
-our $pp_report_header_changes = 0;
-our $pp_first_directory = '2020-04-08';
-our $pp_relative_local_data_dir = 'byzip_local_data_store';
+my $pp_create_missing_directories = 1;
+my $pp_report_generation_messages = 0;
+my $pp_report_sim_messages = 0;
+my $pp_report_adding_case = 0;
+my $pp_dont_do_sims = 0;
+my $pp_report_header_changes = 0;
+my $pp_first_directory = '2020-04-08';
+my $pp_relative_local_data_dir = 'byzip_local_data_store';
 
 
 #
@@ -332,13 +332,19 @@ foreach my $dir (@date_dirs) {
     # Get records reads the .csv file and returns a list of records that _might_ contain
     # useful information
     #
-    my ($cases_column_offset, $zip_column_offset, $ptr) = byzip_a::get_records ($found_csv_file, \@zip_list);
+    my ($cases_column_offset, $zip_column_offset, $ptr) = byzip_a::get_records (
+        $found_csv_file, \@zip_list, $pp_report_generation_messages, $pp_report_header_changes);
     my @possibly_useful_records = @$ptr;
 
     #
     # Process possibly useful records, make list of useful records
     #
-    $ptr = byzip_b::validate_records (\@possibly_useful_records, $cases_column_offset,$zip_column_offset, \@zip_list);
+    $ptr = byzip_b::validate_records (
+        \@possibly_useful_records,
+        $cases_column_offset,
+        $zip_column_offset,
+        \@zip_list,
+        $pp_report_generation_messages);
     my @useful_records = @$ptr;
 
     #
@@ -475,7 +481,7 @@ foreach my $dir (@date_dirs) {
 #
 # 
 #
-my $last_serial = byzip_v::verify_case_list (\@cases_list);
+my ($last_serial, $largest_serial) = byzip_v::verify_case_list (\@cases_list);
 
 my $debug_cases_list_ptr = byzip_debug::make_case_list (\@cases_list);
 my @debug_cases_list = @$debug_cases_list_ptr;
@@ -534,7 +540,7 @@ if ($untested_positive > 0) {
     #
     # 
     #
-    $last_serial = byzip_v::verify_case_list (\@cases_list);
+    ($last_serial, $largest_serial) = byzip_v::verify_case_list (\@cases_list);
 
     $debug_cases_list_ptr = byzip_debug::make_case_list (\@cases_list);
     @debug_cases_list = @$debug_cases_list_ptr;
@@ -542,7 +548,7 @@ if ($untested_positive > 0) {
 
 
 print ("Have $count cases of which $untested_positive_case_count are untested positives\n");
-print ("Last serial = $last_serial\n");
+print ("Last serial = $last_serial, largest = $largest_serial\n");
 
 #
 # PROCESS CASES
@@ -573,36 +579,56 @@ for (my $run_number = 0; $run_number < $number_of_sims; $run_number++) {
     my @this_run_output = @$ptr;
 
     #
-    # Capture the last values
+    # One pass of the sim is complete, capture the last values
+    #
+    # Get the last csv record (row)
     #
     my $len = @this_run_output;
     my $last_record = $this_run_output[$len - 1];
-    my $values = substr ($last_record, 11);
-    # print ("\$values = $values\n");
 
-    my @seperated = split (',', $values);
-    $cured_accum += $seperated[0];
-    $sick_accum += $seperated[1];
-    $untested_positive_accum += $seperated[2];
-    $dead_accum += $seperated[3];
+    #
+    # Seperate the fields of the last record and add the 4 counts to the accumulators
+    #
+    my @seperated = split (',', $last_record);
+    $cured_accum += $seperated[1];
+    $sick_accum += $seperated[2];
+    $untested_positive_accum += $seperated[3];
+    $dead_accum += $seperated[4];
 
     if ($run_number == 0) {
+        #
+        # Initialize
+        #
+        $output_header = "Date,Cured,Sick,UntestedSick,Dead";
         @output_csv = @this_run_output;
         $output_count = @output_csv;
-        $output_header = "Date,Cured,Sick,Dead";
     }
     else {
+        #
+        # Add to what has been captured so far
+        #
+        $output_header .= ",Cured,Sick,UntestedSick,Dead";
         my @new_output_csv;
         for (my $j = 0; $j < $output_count; $j++) {
+            #
+            # Get the existing csv row and the new csv row from the sim just completed
+            #
             my $existing = shift (@output_csv);
             my $new = shift (@this_run_output);
-            my $t = substr ($new, 11);
+
+            #
+            # Get everything except the date that is in the 1st column
+            # "$t" should be ",n,n,n,n"
+            #
+            my $first_comma = index ($new, ',');
+            my $t = substr ($new, $first_comma);
             # print ("\$t = $t\n");
+
             my $s = $existing .= $t;
             push (@new_output_csv, $s);
         }
+
         @output_csv = @new_output_csv;
-        $output_header .= ",Cured,Sick,Dead";
     }
 }
 

@@ -18,19 +18,23 @@ sub make_plot {
     my @data;
     
     my @csv_array = @$csv_ptr;
+    my $column_titles = shift (@csv_array);
 
     my @new_array;
 
     my @header_array;
+
     my @cured_1_array;
     my @cured_2_array;
     my @cured_3_array;
+
     my @sick_1_array;
     my @untested_positive_sick_1_array;
     my @sick_2_array;
     my @untested_positive_sick_2_array;
     my @sick_3_array;
     my @untested_positive_sick_3_array;
+
     my @dead_1_array;
     my @dead_2_array;
     my @dead_3_array;
@@ -38,27 +42,27 @@ sub make_plot {
     my $len = @$csv_ptr;
     for (my $i = 0; $i < $len; $i++) {
         my @columns = split (',', $csv_array[$i]);
+        my $column_index = 0;
 
         #
-        # Column header is [0]
+        # Date is column [0]
         #
-        my $src = 0;
-        $header_array[$i] = $columns[$src++];
+        $header_array[$i] = $columns[$column_index++];
 
-        $cured_1_array[$i] = $columns[$src++];
-        $sick_1_array[$i] = $columns[$src++];
-        $untested_positive_sick_1_array[$i] = $columns[$src++];
-        $dead_1_array[$i] = $columns[$src++];
+        $cured_1_array[$i] = $columns[$column_index++];
+        $sick_1_array[$i] = $columns[$column_index++];
+        $untested_positive_sick_1_array[$i] = $columns[$column_index++];
+        $dead_1_array[$i] = $columns[$column_index++];
         
-        $cured_2_array[$i] = $columns[$src++];
-        $sick_2_array[$i] = $columns[$src++];
-        $untested_positive_sick_2_array[$i] = $columns[$src++];
-        $dead_2_array[$i] = $columns[$src++];
+        $cured_2_array[$i] = $columns[$column_index++];
+        $sick_2_array[$i] = $columns[$column_index++];
+        $untested_positive_sick_2_array[$i] = $columns[$column_index++];
+        $dead_2_array[$i] = $columns[$column_index++];
         
-        $cured_3_array[$i] = $columns[$src++];
-        $sick_3_array[$i] = $columns[$src++];
-        $untested_positive_sick_3_array[$i] = $columns[$src++];
-        $dead_3_array[$i] = $columns[$src++];
+        $cured_3_array[$i] = $columns[$column_index++];
+        $sick_3_array[$i] = $columns[$column_index++];
+        $untested_positive_sick_3_array[$i] = $columns[$column_index++];
+        $dead_3_array[$i] = $columns[$column_index++];
     }
 
     push (@data, \@header_array);

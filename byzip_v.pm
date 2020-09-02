@@ -17,18 +17,19 @@ sub verify_case_list {
     }
 
     my @cases_list = @$case_list_ptr;
+    my $largest_serial = -1;
+    my $last_serial;
 
     my %serials;
     foreach my $cl (@cases_list) {
-        my $s = $cl->{'serial'};
-        if (exists ($serials{$s})) {
-            print ("  Duplicate serial is $s\n");
+        $last_serial = $cl->{'serial'};
+        if (exists ($serials{$last_serial})) {
+            print ("  Duplicate serial is $last_serial\n");
             exit (1);
         }
     }
 
     my $previous_begin_dt;
-    my $last_serial = -1;
     my $index = 0;
 
     my $temp_dt = $cases_list[0]->{'begin_dt'};
@@ -69,14 +70,14 @@ sub verify_case_list {
 
         my $end_dt = $tc->{'end_dt'};
         my $s = $tc->{'serial'};
-        if ($s > $last_serial) {
-            $last_serial = $s;
+        if ($s > $largest_serial) {
+            $largest_serial = $s;
         }
     }
 
     print ("  Verify complete\n");
 
-    return ($last_serial);
+    return ($last_serial, $largest_serial);
 }
 
 sub compute_days_diff {
