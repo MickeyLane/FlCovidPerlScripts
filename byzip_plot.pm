@@ -39,7 +39,7 @@ sub make_plot {
     my @dead_2_array;
     my @dead_3_array;
 
-    my $len = @$csv_ptr;
+    my $len = @csv_array;
     for (my $i = 0; $i < $len; $i++) {
         my @columns = split (',', $csv_array[$i]);
         my $column_index = 0;

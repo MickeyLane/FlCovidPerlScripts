@@ -31,6 +31,7 @@ use byzip_c;
 use byzip_v;
 use byzip_plot;
 use byzip_debug;
+use byzip_rel;
 
 package main;
 
@@ -44,8 +45,6 @@ package main;
 # Use data from Google Drive
 #
 my $pp_do_everything_relative_to_startup_dir = 0;
-# my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG?usp=sharing';
-my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG';
 
 #
 # Edit the following as needed. If you are using Linux, ignore '_windows' and vice versa
@@ -108,49 +107,7 @@ else {
     $pp_output_file = "$pp_relative_local_data_dir/byzip-output.csv";
 }
 
-#
-# If using data from Google share, see if a local store exists
-#
-if ($pp_do_everything_relative_to_startup_dir) {
-    my $fq_data_store_dir = "$cwd/$pp_relative_local_data_dir";
-    print ("Checking for $fq_data_store_dir...\n");
-    if (!(-e $fq_data_store_dir)) {
-        #
-        # Local storage dir does not exist
-        #
-        print ("\nGrant permission to create local directory $fq_data_store_dir and\n");
-        print ("   populate with downloaded zip data .csv files from a Google Drive? [y/n] ");
-        my $nv = uc <STDIN>;  # force uppercase
-        $nv =~ s/[\r\n]+//;
-        if ($nv =~ /Y/) {
-            #
-            # Yes
-            #
-            print ("Making $fq_data_store_dir\n");
-            mkdir ($fq_data_store_dir) or die "Could not make $fq_data_store_dir: $!";
-        }
-        else {
-            #
-            # No
-            #
-            print ("Permission not granted, execution halted\n");
-            exit (1);
-        }
-    }
 
-    my $fq_first_date_dir = "$fq_data_store_dir/$pp_first_directory";
-    print ("Checking for $fq_first_date_dir...\n");
-    if (!(-e $fq_first_date_dir)) {
-        print ("Making $fq_first_date_dir\n");
-        my $status = mkdir ($fq_data_store_dir);
-        my $reason = $!;
-        if ($status == 0) {
-            print ("Could not make $fq_first_date_dir: $reason\n");
-            exit (1);
-        }
-    }
-
-}
 
 my $zip_string;
 my $mortality = 3.1;
@@ -225,11 +182,16 @@ my @csv_files;
 my $mortality_x_10 = int ($mortality * 10);
 # my $non_white_x_10 = int ($non_white * 10);
 
-#
-#
-#
-# use LWP::Simple;
-# getstore($url, $file);
+my $status = 1;
+if ($pp_do_everything_relative_to_startup_dir) {
+    $status = byzip_rel::setup ($pp_relative_local_data_dir, $pp_first_directory);
+}
+else {
+}
+
+if ($status == 0) {
+    exit (1);
+}
 
 if ($pp_create_missing_directories) {
     #
@@ -340,6 +302,7 @@ foreach my $dir (@date_dirs) {
     # Process possibly useful records, make list of useful records
     #
     $ptr = byzip_b::validate_records (
+        $dir,
         \@possibly_useful_records,
         $cases_column_offset,
         $zip_column_offset,
@@ -475,7 +438,6 @@ foreach my $dir (@date_dirs) {
             }
         }
     }
-
 }
 
 #
@@ -494,6 +456,7 @@ my $count = @cases_list;
 my $untested_positive_case_count = 0;
 my $temp_hash_ptr = $cases_list[0];
 my $first_simulation_dt = $temp_hash_ptr->{'begin_dt'};
+my $first_simulation_dt_epoch = $first_simulation_dt->epoch();;
 
 if ($untested_positive > 0) {
     print ("Adding untested positive cases...\n");
@@ -501,22 +464,40 @@ if ($untested_positive > 0) {
     for (my $i = 0; $i < $count; $i++) {
         my $existing_case_ptr = shift (@cases_list);
 
+        #
+        # Get info from an existing real case
+        #
         my $existing_begin_dt = $existing_case_ptr->{'begin_dt'};
+        my $existing_begin_epoch = $existing_begin_dt->epoch();
         my $zip_from_this_record = $existing_case_ptr->{'from_zip'};
 
-        my $change = DateTime::Duration->new (days => $i + 1);
+        # my $change = DateTime::Duration->new (days => $i + 1);
 
-        my $new_begin_dt = $existing_begin_dt->clone();
-        $new_begin_dt->subtract_duration ($change);
+        # my $new_begin_dt = $existing_begin_dt->clone();
+        # $new_begin_dt->subtract_duration ($change);
 
-        my $diff = DateTime->compare ($new_begin_dt, $first_simulation_dt);
-        if ($diff == 1) {
+        # my $diff = DateTime->compare ($new_begin_dt, $first_simulation_dt);
+        my $dur_to_days = 86400;
+
+        my $new_epoch = $existing_begin_epoch;
+        my $number_of_days_to_backdate = 1;
+        for (my $nc = 0; $nc < $untested_positive; $nc++) {
             #
-            # Create new cases
+            # Create info for a new untested case
             #
-            for (my $nc = 0; $nc < $untested_positive; $nc++) {
+            my $t = $number_of_days_to_backdate * $dur_to_days;
+            my $new_epoch = $new_epoch - $t;
+            my $new_begin_dt = DateTime->from_epoch (epoch => $new_epoch);
+
+            #
+            # Do not create cases that pre-date the 1st real case
+            #
+            if ($new_epoch >= $first_simulation_dt_epoch) {
+                #
+                # Create a new cases
+                #
                 my %hash;
-                # print ("$case_serial_number\n");
+
                 $hash{'serial'} = $case_serial_number++;
                 $hash{'begin_dt'} = $new_begin_dt;
                 $hash{'from_zip'} = $zip_from_this_record;
@@ -529,6 +510,15 @@ if ($untested_positive > 0) {
 
                 $untested_positive_case_count++;
             }
+            else {
+                #
+                # New case predates 1st real case so end this loop. Subsequent cases
+                # will also predate
+                #
+                last;
+            }
+
+            $number_of_days_to_backdate -= 2;
         }
         
         push (@cases_list, $existing_case_ptr);
@@ -652,6 +642,7 @@ print ("At end of simulation:\n");
 print ("  Dead: " . int ($dead_accum / $number_of_sims) . "\n");
 print ("  Cured: " . int ($cured_accum / $number_of_sims) . "\n");
 print ("  Still sick " . int ($sick_accum / $number_of_sims) . "\n");
+print ("  Still sick from the untested positives " . int ($untested_positive_accum / $number_of_sims) . "\n");
 
 exit (1);
 

@@ -8,6 +8,7 @@ use strict;
 #
 
 sub validate_records {
+    my $dir = shift;
     my $ptr = shift;
     my $cases_column_offset = shift;
     my $zip_column_offset = shift;
@@ -77,15 +78,35 @@ sub validate_records {
         }
 
         #
-        # Search for '0' or the '<5' value and ignore this record if found
+        # If cases equal zero, ignore
         #
         if ($cases eq '0') {
             next;
         }
 
+        #
+        # If the 1st char is '<', ignore
+        #
         my $first_cases_character = substr ($cases, 0, 1);
         if ($first_cases_character eq '<') {
             next;
+        }
+
+        #
+        # If '5 to 9'
+        #
+        if ($cases eq '5 to 9') {
+            print ("  Changing '5 to 9' to 7\n");
+            $cases = '7';
+        }
+
+        #
+        # If something other tha a simple number, complain
+        #
+        if ($cases =~ /[\D]/) {
+            print ("$dir...\n");
+            print ("  Non numeric found in cases field is $cases\n");
+            exit (1);
         }
 
         #
@@ -103,6 +124,7 @@ sub validate_records {
         #
         # Update fields and make a new record
         #
+        $list[$cases_column_offset] = $cases;
         $list[$zip_column_offset] = $zip_from_this_record;
         my $new_record = join (',', @list);
         push (@useful_records, $new_record);
