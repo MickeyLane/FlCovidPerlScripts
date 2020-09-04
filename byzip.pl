@@ -32,6 +32,7 @@ use byzip_v;
 use byzip_plot;
 use byzip_debug;
 use byzip_rel;
+use byzip_local;
 
 package main;
 
@@ -45,14 +46,6 @@ package main;
 # Use data from Google Drive
 #
 my $pp_do_everything_relative_to_startup_dir = 0;
-
-#
-# Edit the following as needed. If you are using Linux, ignore '_windows' and vice versa
-#
-my $fq_root_dir_for_windows = 'D:/Covid_ByZip';
-my $fq_root_dir_for_linux = '/home/mickey/Covid_ByZip';
-
-
 my $pp_create_missing_directories = 1;
 my $pp_report_generation_messages = 0;
 my $pp_report_sim_messages = 0;
@@ -61,53 +54,7 @@ my $pp_dont_do_sims = 0;
 my $pp_report_header_changes = 0;
 my $pp_first_directory = '2020-04-08';
 my $pp_relative_local_data_dir = 'byzip_local_data_store';
-
-
-#
-# Get current directory and determine platform
-#
-my $windows_flag;
-my $cwd = Cwd::cwd();
-$windows_flag = 0;
-if ($cwd =~ /^[C-Z]:/) {
-    $windows_flag = 1;
-}
-print ("Current working directory is $cwd\n");
-
-#
-# Set $dir to whatever directory the work is to be done in
-#
-my $dir;
-if ($pp_do_everything_relative_to_startup_dir == 0) {
-    #
-    # Go to root dir
-    #
-    if ($windows_flag) {
-        $dir = lc $fq_root_dir_for_windows;
-    }
-    else {
-        $dir = $fq_root_dir_for_linux;
-    }
-
-    $CWD = $dir;
-    $cwd = Cwd::cwd();
-}
-else {
-    $dir = $cwd;
-}
-
-#
-# Determine the location of the output file
-#
-my  $pp_output_file;
-if ($pp_do_everything_relative_to_startup_dir == 0) {
-    $pp_output_file = "$dir/byzip-output.csv";
-}
-else {
-    $pp_output_file = "$pp_relative_local_data_dir/byzip-output.csv";
-}
-
-
+my $pp_output_file_name = 'byzip-output.csv';
 
 my $zip_string;
 my $mortality = 3.1;
@@ -183,15 +130,18 @@ my $mortality_x_10 = int ($mortality * 10);
 # my $non_white_x_10 = int ($non_white * 10);
 
 my $status = 1;
+my $dir;
 if ($pp_do_everything_relative_to_startup_dir) {
-    $status = byzip_rel::setup ($pp_relative_local_data_dir, $pp_first_directory);
+    ($status, $dir) = byzip_rel::setup_relative ($pp_relative_local_data_dir, $pp_first_directory);
 }
 else {
+    ($status, $dir) = byzip_local::setup_local ($pp_relative_local_data_dir, $pp_first_directory);
 }
-
 if ($status == 0) {
     exit (1);
 }
+
+print ("Current working directory is $dir\n");
 
 if ($pp_create_missing_directories) {
     #
@@ -559,7 +509,10 @@ my $number_of_sims = 3;
 my @output_csv;
 my $output_count;
 my $output_header;
-for (my $run_number = 0; $run_number < $number_of_sims; $run_number++) {
+
+for (my $run_number = 1; $run_number <= $number_of_sims; $run_number++) {
+
+    print ("*************** Sim $run_number *******************\n");
 
     foreach my $hash_ptr (@cases_list) {
         add_random ($hash_ptr);
@@ -585,7 +538,7 @@ for (my $run_number = 0; $run_number < $number_of_sims; $run_number++) {
     $untested_positive_accum += $seperated[3];
     $dead_accum += $seperated[4];
 
-    if ($run_number == 0) {
+    if ($run_number == 1) {
         #
         # Initialize
         #
@@ -622,7 +575,8 @@ for (my $run_number = 0; $run_number < $number_of_sims; $run_number++) {
     }
 }
 
-open (FILE, ">", $pp_output_file) or die "Can't open $pp_output_file: $!";
+my $output_file = "$dir/$pp_output_file_name";
+open (FILE, ">", $output_file) or die "Can't open $output_file: $!";
 print (FILE "$output_header\n");
 
 foreach my $r (@output_csv) {
@@ -726,6 +680,8 @@ sub add_random {
     my $hash_ptr = shift;
 
     my $local_begin_dt = $hash_ptr->{'begin_dt'};
+
+    $hash_ptr->{'sim_state'} = 'not started';
 
     #
     # Get a random value between 1 and 1000 inclusive

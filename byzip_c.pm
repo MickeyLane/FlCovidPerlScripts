@@ -97,27 +97,22 @@ sub process {
             my $duration = $this_case_begin_epoch - $current_sim_epoch;
             my $days = 0;
             if ($duration > 0) {
-                $days = $duration / 86400;
+                $days = int ($duration / 86400);
             }
-
-
-            $days = 0;
-
-
 
             if ($serial == $last_serial || $days > 10) {
                 $done_with_this_day = 1;
-
-                if ($print_stuff) {
-                    print ("  Processing last serial $serial in state \"$case_state\"\n");
-                }
             }
-            else {
-                if ($print_stuff) {
-                    my $b = main::make_printable_date_string ($top_case_begin_dt);
-                    my $e = main::make_printable_date_string ($top_case_end_dt);
-                    print ("  Processing serial $serial ($b to $e) in state \"$case_state\"\n");
-                }
+            
+            if ($print_stuff) {
+                my $b = main::make_printable_date_string ($top_case_begin_dt);
+                my $e = main::make_printable_date_string ($top_case_end_dt);
+                print ("  Processing serial $serial ($b to $e) in state \"$case_state\"\n");
+            }
+
+            if ($case_state eq 'cured') {
+                print ("  Attempt to process $serial in state \"$case_state\"\n");
+                exit (1);
             }
 
             # my $begin_cmp_result = DateTime->compare ($current_sim_dt, $top_case_begin_dt);
@@ -149,7 +144,7 @@ sub process {
                 #
                 push (@new_cases_list, $top_case_ptr);
                 # $done_with_this_day = 1;
-                $string_for_debug = 'not processed';
+                $string_for_debug = 'can not process yet';
 
                 goto end_of_cases_for_this_sim_date;
             }
