@@ -14,8 +14,8 @@ use File::chdir;
 #
 # Edit the following as needed. If you are using Linux, ignore '_windows' and vice versa
 #
-my $fq_root_dir_for_windows = 'D:/Covid_ByZip';
-my $fq_root_dir_for_linux = '/home/mickey/Covid_ByZip';
+my $fq_root_dir_for_windows = 'D:/Covid/ByZip';
+my $fq_root_dir_for_linux = '/home/mickey/ByZip';
 
 
 

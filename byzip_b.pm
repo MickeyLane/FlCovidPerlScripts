@@ -18,7 +18,10 @@ sub validate_records {
     my @possibly_useful_records = @$ptr;
     my @useful_records;
     
+    my $dir_printed = 0;
+
     foreach my $record (@possibly_useful_records) {
+        $dir_printed = 0;
         #
         # Delete fields wrapped in double quotes. They could contain commas
         #
@@ -96,6 +99,11 @@ sub validate_records {
         # If '5 to 9'
         #
         if ($cases eq '5 to 9') {
+            if ($dir_printed == 0) {
+                print ("$dir...\n");
+                $dir_printed = 1;
+            }
+
             print ("  Changing '5 to 9' to 7\n");
             $cases = '7';
         }
@@ -104,7 +112,9 @@ sub validate_records {
         # If something other tha a simple number, complain
         #
         if ($cases =~ /[\D]/) {
-            print ("$dir...\n");
+            if ($dir_printed == 0) {
+                print ("$dir...\n");
+            }
             print ("  Non numeric found in cases field is $cases\n");
             exit (1);
         }

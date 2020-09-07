@@ -47,7 +47,7 @@ package main;
 #
 my $pp_do_everything_relative_to_startup_dir = 0;
 my $pp_create_missing_directories = 1;
-my $pp_report_generation_messages = 0;
+my $pp_report_data_collection_messages = 0;
 my $pp_report_sim_messages = 0;
 my $pp_report_adding_case = 0;
 my $pp_dont_do_sims = 0;
@@ -197,7 +197,7 @@ print ("Searching .csv files and collecting data...\n");
 #
 my @suffixlist = qw (.csv);
 foreach my $dir (@date_dirs) {
-    if ($pp_report_generation_messages) {
+    if ($pp_report_data_collection_messages) {
         print ("$dir...\n");
     }
 
@@ -234,7 +234,7 @@ foreach my $dir (@date_dirs) {
     close (DIR);
 
     if (!(defined ($found_csv_file))) {
-        if ($pp_report_generation_messages) {
+        if ($pp_report_data_collection_messages) {
             print ("  No .csv file found in $dir\n");
         }
         next;
@@ -245,7 +245,7 @@ foreach my $dir (@date_dirs) {
     # useful information
     #
     my ($cases_column_offset, $zip_column_offset, $ptr) = byzip_a::get_records (
-        $found_csv_file, \@zip_list, $pp_report_generation_messages, $pp_report_header_changes);
+        $found_csv_file, \@zip_list, $pp_report_data_collection_messages, $pp_report_header_changes);
     my @possibly_useful_records = @$ptr;
 
     #
@@ -257,13 +257,13 @@ foreach my $dir (@date_dirs) {
         $cases_column_offset,
         $zip_column_offset,
         \@zip_list,
-        $pp_report_generation_messages);
+        $pp_report_data_collection_messages);
     my @useful_records = @$ptr;
 
     #
     #
     #
-    if ($pp_report_generation_messages) {
+    if ($pp_report_data_collection_messages) {
         print ("Process useful records...\n");
     }
 
@@ -333,7 +333,7 @@ foreach my $dir (@date_dirs) {
                 }
                 else {
                     my $serial = $hash_ptr->{'serial'};
-                    if ($pp_report_generation_messages) {
+                    if ($pp_report_data_collection_messages) {
                         print ("  Deleting case with serial = $serial\n");
                     }
                     $new_cases++;
@@ -353,7 +353,7 @@ foreach my $dir (@date_dirs) {
         # Generate new cases
         # ------------------
         #
-        if ($pp_report_generation_messages) {
+        if ($pp_report_data_collection_messages) {
             print ("  New cases for $zip_from_this_record = $new_cases, total now $int_cases\n");
         }
 
@@ -596,7 +596,9 @@ print ("At end of simulation:\n");
 print ("  Dead: " . int ($dead_accum / $number_of_sims) . "\n");
 print ("  Cured: " . int ($cured_accum / $number_of_sims) . "\n");
 print ("  Still sick " . int ($sick_accum / $number_of_sims) . "\n");
-print ("  Still sick from the untested positives " . int ($untested_positive_accum / $number_of_sims) . "\n");
+if ($untested_positive != 0) {
+    print ("  Still sick from the untested positives " . int ($untested_positive_accum / $number_of_sims) . "\n");
+}
 
 exit (1);
 
@@ -720,7 +722,7 @@ sub add_random {
         $hash_ptr->{'ending_status'} = 'cured';
     }
 
-    if ($pp_report_generation_messages && $pp_report_adding_case) {
+    if ($pp_report_data_collection_messages && $pp_report_adding_case) {
         #
         # Debug...
         #

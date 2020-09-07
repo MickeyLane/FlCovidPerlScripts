@@ -9,10 +9,8 @@ use strict;
 
 use LWP::Simple;
 use File::chdir;
-
-# my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG?usp=sharing';
-my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/1hIXQUJExG0AWPm2oY5F_e_FbRmFwTeoG';
-
+# https://drive.google.com/drive/folders/182LvT3tZaG7kALoNXRW1j4HP21uVafnb?usp=sharing
+my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/182LvT3tZaG7kALoNXRW1j4HP21uVafnb';
 my $byzip_csv_name = 'byzip.csv';
 
 sub setup_relative {
@@ -35,13 +33,13 @@ sub setup_relative {
     my $fq_data_store_dir = "$dir/$relative_local_data_dir";
     my $fq_first_date_dir = "$fq_data_store_dir/$first_directory";
     my $now_dt = DateTime->now();
-    my $now_epoch = $now_dt->epoch();
-    my $fq_todays_date_dir = main::make_printable_date_string ($now_dt);
+    my $todays_directory = main::make_printable_date_string ($now_dt);
+    my $fq_todays_date_dir = "$fq_data_store_dir/$todays_directory";
 
     #
     # See if a local store exists
     #
-    print ("Checking for $fq_data_store_dir...\n");
+    print ("Checking for local storage dir ($fq_data_store_dir)...\n");
     if (!(-e $fq_data_store_dir)) {
         #
         # Local storage dir does not exist
@@ -65,8 +63,11 @@ sub setup_relative {
             return (0);
         }
     }
+    else {
+        print ("Exists\n");
+    }
 
-    print ("Checking for $fq_first_date_dir...\n");
+    print ("Checking for 1st date dir ($fq_first_date_dir)...\n");
     if (!(-e $fq_first_date_dir)) {
         print ("Making $fq_first_date_dir\n");
 
@@ -81,37 +82,36 @@ sub setup_relative {
 
         print ("Created\n");
     }
+    else {
+        print ("Exists\n");
+    }
 
-    print ("Checking for $fq_todays_date_dir...\n");
+    print ("Checking for today's date dir ($fq_todays_date_dir)...\n");
     if (!(-e $fq_todays_date_dir)) {
-        print ("Making missing date directories\n");
 
-        my @dirs_to_create;
+        print ("Making list of all possible date directories...\n");
+        my $all_possible_dates_ptr = make_list_of_all_possible_date_dirs ($first_directory, $todays_directory);
+        my @all_possible_dates = @$all_possible_dates_ptr;
 
-        opendir (DIR, $relative_local_data_dir) or die "Get_db_files() can't open $relative_local_data_dir: $!";
-        while (my $ff = readdir (DIR)) {
-            if ($ff =~ /^(\d{4})-(\d{2})-(\d{2})/) {
-                my $current_dt = DateTime->new(
-                    year       => $1,
-                    month      => $2,
-                    day        => $3
-                );
-                my $current_epoch = $current_dt->epoch();
+        print ("Making missing date directories...\n");
 
-                my $next_epoch = $current_epoch + 86400;
-
-                if ($next_epoch <= $now_epoch) {                
-                    my $next_dt = DateTime->from_epoch (epoch => $next_epoch);
-                    my $next_date_dir = main::make_printable_date_string ($next_dt);
-                    push (@dirs_to_create, $next_date_dir);
-                }
-            }
-
-        }
-        
         local $CWD = $relative_local_data_dir;
 
-        # main::make_new_dirs ($relative_local_data_dir);
+        foreach my $dd (@all_possible_dates) {
+            if (-e $dd) {
+                next;
+            }
+
+            if (1) {
+                mkdir ($dd);
+            }
+            else {
+                print ("$dd\n");
+            }
+        }
+    }
+    else {
+        print ("Exists\n");
     }
 
     my $url = "$pp_google_byzip_share/$first_directory/$byzip_csv_name";
@@ -120,12 +120,60 @@ sub setup_relative {
     #
     #
     #
-    # 
-    my $code = getstore ($url, $file);
-    print ("Getstore response code $code\n");
+    if (1) {
+        my $code = getstore ($url, $file);
+        print ("Getstore response code $code\n");
+    }
 
 
-    return (1, $dir);
+    return (0, $dir);
+}
+
+sub make_list_of_all_possible_date_dirs {
+    my $first_dir = shift;
+    my $todays_directory = shift;
+
+    my @list = $first_dir;
+    my $current_epoch;
+
+    #
+    # Convert the 1st date dir string into an epoch value
+    #
+    if ($first_dir =~ /^(\d{4})-(\d{2})-(\d{2})/) {
+        my $start_dt = DateTime->new (year => $1, month => $2, day => $3);
+        $current_epoch = $start_dt->epoch();
+    }
+    else {
+        print ("Passed a bad start date dir string\n");
+        exit (1);
+    }
+
+    #
+    # Get today's date into an epoch value
+    #
+    my $now_dt = DateTime->now();
+    my $now_epoch = $now_dt->epoch();
+
+    #
+    # The loop starts with $current_epoch equal to the 1st dir. The 1st dir is
+    # already in the list. Increment and add to list until the current date is
+    # in the list
+    #
+    my $done = 0;
+    while (!$done) {
+        $current_epoch += 86400;
+
+        if ($current_epoch <= $now_epoch) {                
+            my $next_dt = DateTime->from_epoch (epoch => $current_epoch);
+            my $next_date_dir = main::make_printable_date_string ($next_dt);
+            push (@list, $next_date_dir);
+        }
+        else {
+            $done = 1;
+        }
+    }
+
+    return (\@list);
 }
 
 1;

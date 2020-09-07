@@ -84,7 +84,7 @@ sub make_plot {
 
     my $graph_file = "$dir/graph.gif";
 
-    my $graph = GD::Graph::lines->new (1500, 750);
+    my $graph = GD::Graph::lines->new (1900, 750);
     $graph->set( 
             x_label 	=> 'Dates', 
             y_label 	=> 'Cases', 
@@ -94,7 +94,8 @@ sub make_plot {
             borderclrs 	=> [ qw(black black), qw(black black) ], 
             bar_spacing => 4, 
             transparent => 1,
-            show_values => 0
+            show_values => 0,
+            x_labels_vertical => 1
     ); 
 
     my $gd = $graph->plot(\@data) or die $graph->error; 
