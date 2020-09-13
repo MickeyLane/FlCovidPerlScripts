@@ -9,10 +9,12 @@ use strict;
 
 use GD::Graph::points;
 use GD::Graph::lines;
+use List::Util qw(min);
 
 sub make_plot {
     my $dir = shift;
     my $csv_ptr = shift;
+    my $max_cured = shift;
     my $title = shift;
 
     my @data;
@@ -49,17 +51,17 @@ sub make_plot {
         #
         $header_array[$i] = $columns[$column_index++];
 
-        $cured_1_array[$i] = $columns[$column_index++];
+        $cured_1_array[$i] = min ($columns[$column_index++], $max_cured);
         $sick_1_array[$i] = $columns[$column_index++];
         $untested_positive_sick_1_array[$i] = $columns[$column_index++];
         $dead_1_array[$i] = $columns[$column_index++];
         
-        $cured_2_array[$i] = $columns[$column_index++];
+        $cured_2_array[$i] = min ($columns[$column_index++], $max_cured);
         $sick_2_array[$i] = $columns[$column_index++];
         $untested_positive_sick_2_array[$i] = $columns[$column_index++];
         $dead_2_array[$i] = $columns[$column_index++];
         
-        $cured_3_array[$i] = $columns[$column_index++];
+        $cured_3_array[$i] = min ($columns[$column_index++], $max_cured);
         $sick_3_array[$i] = $columns[$column_index++];
         $untested_positive_sick_3_array[$i] = $columns[$column_index++];
         $dead_3_array[$i] = $columns[$column_index++];

@@ -33,6 +33,10 @@ sub verify_case_list {
     my $index = 0;
 
     my $temp_dt = $cases_list[0]->{'begin_dt'};
+    if (!(defined ($temp_dt))) {
+        print ("  Start is undefined in first case\n");
+        exit (1);
+    }
     my $first_case_begin_dt = $temp_dt->clone();
     my $first_case_string = main::make_printable_date_string ($first_case_begin_dt);
     if ($print_stuff) {

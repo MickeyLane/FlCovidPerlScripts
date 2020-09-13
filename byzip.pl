@@ -52,8 +52,6 @@ my $pp_report_sim_messages = 0;
 my $pp_report_adding_case = 0;
 my $pp_dont_do_sims = 0;
 my $pp_report_header_changes = 0;
-my $pp_first_directory = '2020-04-08';
-my $pp_relative_local_data_dir = 'byzip_local_data_store';
 my $pp_output_file_name = 'byzip-output.csv';
 
 my $zip_string;
@@ -65,15 +63,25 @@ my $untested_positive = 0;
 # my $white;
 my $severity = '40:40:20';
 my $plot_output_flag = 0;
+my $max_cured = 100000000;
 
 my @date_dirs;
 
 my $untested_positive_switch = 'untested_positive=';
 my $untested_positive_switch_string_len = length ($untested_positive_switch);
+my $max_display_switch = 'cured_max_display=';
+my $max_display_switch_string_len = length ($max_display_switch);
 foreach my $switch (@ARGV) {
     my $lc_switch = lc $switch;
     if (index ($lc_switch, 'zip=') != -1) {
-        $zip_string = substr ($switch, 4);
+        my $temp_zip_string = substr ($switch, 4);
+        my $first_space = index ($temp_zip_string, ' ');
+        if ($first_space != -1) {
+            $zip_string = substr ($temp_zip_string, 0, $first_space);
+        }
+        else {
+            $zip_string = $temp_zip_string;
+        }
     }
     elsif (index ($lc_switch, 'mortality=') != -1) {
         $mortality = substr ($switch, 10);
@@ -85,6 +93,10 @@ foreach my $switch (@ARGV) {
     elsif (index ($lc_switch, 'duration_max=') != -1) {
         my $val = substr ($switch, 13);
         $duration_max = int ($val);
+    }
+    elsif (index ($lc_switch, $max_display_switch) != -1) {
+        my $val = substr ($switch, $max_display_switch_string_len);
+        $max_cured = int ($val);
     }
     elsif (index ($lc_switch, 'plot=') != -1) {
         my $val = substr ($switch, 5);
@@ -108,13 +120,12 @@ foreach my $switch (@ARGV) {
     }
 }
 
-if (!(defined ($zip_string))) {
-    print ("No zip code specified\n");
-    exit (1);
-}
+my $state = choose_state ($zip_string);
+
 
 print ("Simulation values:\n");
 print ("  Zip = $zip_string\n");
+print ("  State = $state\n");
 print ("  Mortality = $mortality percent\n");
 print ("  Duration_min = $duration_min days\n");
 print ("  Duration_max = $duration_max days\n");
@@ -132,26 +143,16 @@ my $mortality_x_10 = int ($mortality * 10);
 my $status = 1;
 my $dir;
 if ($pp_do_everything_relative_to_startup_dir) {
-    ($status, $dir) = byzip_rel::setup_relative ($pp_relative_local_data_dir, $pp_first_directory);
+    ($status, $dir) = byzip_rel::setup_relative ();
 }
 else {
-    ($status, $dir) = byzip_local::setup_local ($pp_relative_local_data_dir, $pp_first_directory);
+    ($status, $dir) = byzip_local::setup_local ($state, $pp_create_missing_directories);
 }
 if ($status == 0) {
     exit (1);
 }
 
 print ("Current working directory is $dir\n");
-
-if ($pp_create_missing_directories) {
-    #
-    # Make missing date directories
-    #
-    my $not_done = 1;
-    while ($not_done) {
-        $not_done = make_new_dirs ($dir);
-    }
-}
 
 #
 # Examine $dir
@@ -245,7 +246,21 @@ foreach my $dir (@date_dirs) {
     # useful information
     #
     my ($cases_column_offset, $zip_column_offset, $ptr) = byzip_a::get_records (
-        $found_csv_file, \@zip_list, $pp_report_data_collection_messages, $pp_report_header_changes);
+        $found_csv_file,
+        \@zip_list,
+        $state,
+        $pp_report_data_collection_messages,
+        $pp_report_header_changes);
+
+    if (!(defined ($cases_column_offset))) {
+        print ("The cases number column offset was not discovered\n");
+        exit (1);
+    }
+    if (!(defined ($zip_column_offset))) {
+        print ("The zip code column offset was not discovered\n");
+        exit (1);
+    }
+    
     my @possibly_useful_records = @$ptr;
 
     #
@@ -586,7 +601,7 @@ foreach my $r (@output_csv) {
 close (FILE);
 
 if ($plot_output_flag) {
-    byzip_plot::make_plot ($dir, \@output_csv, $zip_string);
+    byzip_plot::make_plot ($dir, \@output_csv, $max_cured, $zip_string);
 }
 
 #
@@ -613,70 +628,6 @@ sub case_sort_routine {
     
     return (DateTime->compare ($a_dt, $b_dt));
 }
-
-
-###################################################################################
-#
-#
-sub make_new_dirs {
-    my $dir = shift;
-
-    #
-    # This stuff is for the name_new_dirs routine
-    #
-    my $dur = DateTime::Duration->new (days => 1);
-    my $now = DateTime->now;
-
-    my @all_date_dirs;
-    my $did_something_flag = 0;
-
-    opendir (DIR, $dir) or die "Get_db_files() can't open $dir: $!";
-    while (my $ff = readdir (DIR)) {
-        #
-        # This is used to rename a bunch of YYYY MM DD directories to YYYY-MM-DD
-        #
-        if ($ff =~ /^(\d{4}) (\d{2}) (\d{2})/) {
-            my $oldff = "$dir/$ff";
-            my $newff = "$dir/$1-$2-$3";
-            rename ($oldff, $newff) or die "Can't rename $oldff: $!";
-        }
-
-        if ($ff =~ /^(\d{4})-(\d{2})-(\d{2})/) {
-            push (@all_date_dirs, "$ff");
-    
-            my $current_dt = DateTime->new(
-                year       => $1,
-                month      => $2,
-                day        => $3
-            );
-
-            my $next_dt = $current_dt->add_duration ($dur);
-            if ($next_dt > $now) {
-                next;
-            }
-
-            my $next_dir_string = sprintf ("%04d-%02d-%02d",
-                $next_dt->year(),
-                $next_dt->month(),
-                $next_dt->day());
-
-            if (-e $next_dir_string) {
-                next;
-            }
-
-            print ("Creating missing date directory $next_dir_string\n");
-
-            mkdir ($next_dir_string) or die "Can't make $next_dir_string: $!";
-
-            $did_something_flag = 1;
-        }
-    }
-
-    close (DIR);
-
-    return ($did_something_flag);
-}
-
 
 sub add_random {
     my $hash_ptr = shift;
@@ -744,4 +695,31 @@ sub make_printable_date_string {
         $dt->year(), $dt->month(), $dt->day());
 
     return ($string);
+}
+
+sub choose_state {
+    my $zip_string = shift;
+
+    if (!(defined ($zip_string))) {
+        print ("No zip code specified\n");
+        exit (1);
+    }
+
+    my $any_zip;
+
+    my $i = index ($zip_string, ',');
+    if ($i != -1) {
+        $any_zip = substr ($zip_string, 0, $i);
+    }
+    else {
+        $any_zip = $zip_string;
+    }
+
+    my $int_any_zip = int ($any_zip);
+    if ($int_any_zip >= 10001 && $int_any_zip <= 11697) {
+        return ('newyork');
+    }
+    else {
+        return ('florida');
+    }
 }

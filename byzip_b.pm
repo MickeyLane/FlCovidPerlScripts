@@ -63,6 +63,8 @@ sub validate_records {
         }
         else {
             print ("Unable to locate 5 consecutive digits in what is supposed to be the zip code column\n");
+            print ("  \$record = $record\n");
+            print ("  \$this_zip = $this_zip\n");
             exit (1);
         }
 

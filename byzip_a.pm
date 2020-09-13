@@ -16,6 +16,7 @@ use strict;
 sub get_records {
     my $found_csv_file = shift;
     my $zip_list_ptr = shift;
+    my $state = shift;
     my $report_generation_messages = shift;
     my $report_header_changes = shift;
 
@@ -71,16 +72,32 @@ sub get_records {
                 if ($h eq 'cases_1') {
                     $cases_column_offset = $j;
                 }
+                elsif ($h eq 'covid_case_count') {
+                    $cases_column_offset = $j;
+                }
+                elsif ($h eq 'positive') {
+                    $cases_column_offset = $j;
+                }
                 elsif ($h eq 'zip') {
                     $zip_column_offset = $j;
                 }
                 elsif ($h eq 'zipx') {
                     $zip_column_offset = $j;
                 }
+                elsif ($h eq 'modified_zcta') {
+                    $zip_column_offset = $j;
+                }
+                elsif ($h eq 'modzcta') {
+                    $zip_column_offset = $j;
+                }
             }
 
             if (!(defined ($zip_column_offset))) {
                 print ("Zip column offset not discovered in header\n");
+                print ("  Have:\n");
+                foreach my $h (@reference_header_list) {
+                    print ("    $h\n");
+                }
                 exit (1);
             }
 

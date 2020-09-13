@@ -13,9 +13,10 @@ use File::chdir;
 my $pp_google_byzip_share = 'https://drive.google.com/drive/folders/182LvT3tZaG7kALoNXRW1j4HP21uVafnb';
 my $byzip_csv_name = 'byzip.csv';
 
+my $pp_relative_local_data_dir = 'byzip_local_data_store';
+my $pp_first_florida_directory = '2020-04-08';
+
 sub setup_relative {
-    my $relative_local_data_dir = shift;
-    my $first_directory = shift;
 
     my $dir;
 
@@ -30,8 +31,8 @@ sub setup_relative {
     }
 
     $dir = $cwd;
-    my $fq_data_store_dir = "$dir/$relative_local_data_dir";
-    my $fq_first_date_dir = "$fq_data_store_dir/$first_directory";
+    my $fq_data_store_dir = "$dir/$pp_relative_local_data_dir";
+    my $fq_first_date_dir = "$fq_data_store_dir/$pp_first_florida_directory";
     my $now_dt = DateTime->now();
     my $todays_directory = main::make_printable_date_string ($now_dt);
     my $fq_todays_date_dir = "$fq_data_store_dir/$todays_directory";
@@ -53,7 +54,7 @@ sub setup_relative {
             # Yes
             #
             print ("Making $fq_data_store_dir\n");
-            mkdir ($relative_local_data_dir) or die "Could not make $relative_local_data_dir: $!";
+            mkdir ($pp_relative_local_data_dir) or die "Could not make $pp_relative_local_data_dir: $!";
         }
         else {
             #
@@ -71,9 +72,9 @@ sub setup_relative {
     if (!(-e $fq_first_date_dir)) {
         print ("Making $fq_first_date_dir\n");
 
-        local $CWD = $relative_local_data_dir;
+        local $CWD = $pp_relative_local_data_dir;
 
-        my $status = mkdir ($first_directory);
+        my $status = mkdir ($pp_first_florida_directory);
         my $reason = $!;
         if ($status == 0) {
             print ("Could not make $fq_first_date_dir: $reason\n");
@@ -90,12 +91,12 @@ sub setup_relative {
     if (!(-e $fq_todays_date_dir)) {
 
         print ("Making list of all possible date directories...\n");
-        my $all_possible_dates_ptr = make_list_of_all_possible_date_dirs ($first_directory, $todays_directory);
+        my $all_possible_dates_ptr = make_list_of_all_possible_date_dirs ($pp_first_florida_directory, $todays_directory);
         my @all_possible_dates = @$all_possible_dates_ptr;
 
         print ("Making missing date directories...\n");
 
-        local $CWD = $relative_local_data_dir;
+        local $CWD = $pp_relative_local_data_dir;
 
         foreach my $dd (@all_possible_dates) {
             if (-e $dd) {
@@ -114,8 +115,8 @@ sub setup_relative {
         print ("Exists\n");
     }
 
-    my $url = "$pp_google_byzip_share/$first_directory/$byzip_csv_name";
-    my $file = "$relative_local_data_dir/$first_directory/$byzip_csv_name";
+    my $url = "$pp_google_byzip_share/$pp_first_florida_directory/$byzip_csv_name";
+    my $file = "$pp_relative_local_data_dir/$pp_first_florida_directory/$byzip_csv_name";
 
     #
     #
