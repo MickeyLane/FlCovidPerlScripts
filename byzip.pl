@@ -33,19 +33,28 @@ use byzip_plot;
 use byzip_debug;
 use byzip_rel;
 use byzip_local;
+use byzip_mt;
 
 package main;
 
 #
 # Any variable that begins with 'fq_' is supposed to contain a fully qualified file name
 # Any variable that begins with 'pp_' is a program parameter and is usually a flag to enable
-# or disable some feature
+#   or disable some feature
+# Any variable that begins with 'fp_' is a floating point value. Not used very often
 #
 
 #
 # Use data from Google Drive
+# NOT FUNCTIONING YET
 #
 my $pp_do_everything_relative_to_startup_dir = 0;
+
+
+#
+#
+#
+my $pp_covid_data_root_dir = 'D:/Covid';
 my $pp_create_missing_directories = 1;
 my $pp_report_data_collection_messages = 0;
 my $pp_report_sim_messages = 0;
@@ -54,8 +63,66 @@ my $pp_dont_do_sims = 0;
 my $pp_report_header_changes = 0;
 my $pp_output_file_name = 'byzip-output.csv';
 
-my $zip_string;
+#
+# OWID = Our World in Data at https://ourworldindata.org/coronavirus
+#
+my $pp_enable_use_of_owid_mortality_data = 1;
+my $pp_owid_url = 'https://covid.ourworldindata.org/data/owid-covid-data.csv';
+my $pp_mortality_hash_value_file_name = 'mort_hash.dat';
+my $pp_print_mortality_table_and_exit = 0; # for debug or experimenting
+
+my $now = DateTime->now;
+my $todays_date_string_for_file_names = sprintf ("%04d %02d %02d",
+                $now->year(),
+                $now->month(),
+                $now->day());
+#
+#
+#
 my $mortality = 3.1;
+my %mortality_table;
+if ($pp_enable_use_of_owid_mortality_data) {
+    my $todays_owid_data_file_name = "$pp_covid_data_root_dir/$todays_date_string_for_file_names owid-covid-data.csv";
+    my $todays_owid_usa_data_file_name = "$pp_covid_data_root_dir/$todays_date_string_for_file_names owid-usa-covid-data.csv";
+    my $todays_mortality_data_file_name = "$pp_covid_data_root_dir/$todays_date_string_for_file_names $pp_mortality_hash_value_file_name";
+
+    #
+    # This creates "YYYY MM DD owid-covid-data.csv"
+    #
+    my $status = byzip_mt::get_mortality_records_from_server (
+        $todays_owid_data_file_name,
+        $pp_owid_url);
+    if ($status != 1) {
+        exit (1);
+    }
+
+    #
+    # This creates "YYYY MM DD owid-usa_covid-data.csv" if necessary and returns the
+    # content
+    #
+    my $us_csv_ptr = byzip_mt::get_usa_data (
+        $todays_owid_data_file_name,
+        $todays_owid_usa_data_file_name);
+
+    byzip_mt::fill_mortality_hash (\%mortality_table, $us_csv_ptr, $todays_mortality_data_file_name);
+
+    if ($pp_print_mortality_table_and_exit) {
+        my @unsorted_records;
+        while (my ($key, $val) = each %mortality_table) {
+            push (@unsorted_records, "$key $val");
+        }
+
+        my @sorted_records = sort (@unsorted_records);
+
+        foreach my $r (@sorted_records) {
+            print ("$r\n");
+        }
+
+        exit (1);
+    }
+}
+
+my $zip_string;
 my $duration_min = 9;
 my $duration_max = 19;
 my $untested_positive = 0;
@@ -126,7 +193,12 @@ my $state = choose_state ($zip_string);
 print ("Simulation values:\n");
 print ("  Zip = $zip_string\n");
 print ("  State = $state\n");
-print ("  Mortality = $mortality percent\n");
+if ($pp_enable_use_of_owid_mortality_data) {
+    print ("  Mortality = using OWID derived table of daily percentage rates\n");
+}
+else {
+    print ("  Mortality = $mortality percent\n");
+}
 print ("  Duration_min = $duration_min days\n");
 print ("  Duration_max = $duration_max days\n");
 print ("  Untested = add $untested_positive untested positive cases for every one detected\n");
@@ -135,9 +207,9 @@ print ("  Untested = add $untested_positive untested positive cases for every on
 # print ("  Severity = $severity disease severity groups: no symptoms, moderate and severe\n");
 # print ("      (Values are percents, total must be 100)\n");
 print ("  Plot output = $plot_output_flag (0 = no, 1 = yes)\n");
+print ("  Clip cured plot line at $max_cured. (Use $max_display_switch)\n");
 
 my @csv_files;
-my $mortality_x_10 = int ($mortality * 10);
 # my $non_white_x_10 = int ($non_white * 10);
 
 my $status = 1;
@@ -397,7 +469,7 @@ foreach my $dir (@date_dirs) {
                 #
                 # Add random values to case
                 #
-                add_random (\%hash);
+                add_random (\%hash, $pp_enable_use_of_owid_mortality_data, \%mortality_table, $mortality);
 
                 push (@cases_list, \%hash);
             }
@@ -469,7 +541,7 @@ if ($untested_positive > 0) {
                 $hash{'untested_positive'} = 1;
                 $hash{'sim_state'} = 'not started';
 
-                add_random (\%hash);
+                add_random (\%hash, $pp_enable_use_of_owid_mortality_data, \%mortality_table, $mortality);
                 
                 push (@cases_list, \%hash);
 
@@ -529,8 +601,8 @@ for (my $run_number = 1; $run_number <= $number_of_sims; $run_number++) {
 
     print ("*************** Sim $run_number *******************\n");
 
-    foreach my $hash_ptr (@cases_list) {
-        add_random ($hash_ptr);
+    foreach my $case_hash_ptr (@cases_list) {
+        add_random ($case_hash_ptr, $pp_enable_use_of_owid_mortality_data, \%mortality_table, $mortality);
     }
 
     my $ptr = byzip_c::process (\@cases_list, $last_serial, \@debug_cases_list, $pp_report_sim_messages);
@@ -631,10 +703,30 @@ sub case_sort_routine {
 
 sub add_random {
     my $hash_ptr = shift;
+    my $enable_use_of_owid_mortality_data = shift;
+    my $mortality_table_ptr = shift;
+    my $fixed_mortality = shift;
 
+    my $mortality;
     my $local_begin_dt = $hash_ptr->{'begin_dt'};
 
     $hash_ptr->{'sim_state'} = 'not started';
+
+    if ($enable_use_of_owid_mortality_data) {
+        my $key = make_printable_date_string ($local_begin_dt);
+        my $fp_val = $mortality_table_ptr->{$key};
+        if (!(defined ($fp_val))) {
+            print ("No value found in mortality hash table for $key\n");
+            exit (1);
+        }
+
+        $mortality = $fp_val;
+    }
+    else {
+        $mortality = $fixed_mortality;
+    }
+
+    my $mortality_x_10 = int ($mortality * 10);
 
     #
     # Get a random value between 1 and 1000 inclusive
@@ -723,3 +815,5 @@ sub choose_state {
         return ('florida');
     }
 }
+
+
